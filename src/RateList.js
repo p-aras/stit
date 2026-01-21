@@ -41,7 +41,7 @@ const RECEIPT = {
 };
 
 /* Default Submitter options */
-const DEFAULT_SUBMITTERS = ["Monu", "Sanjay", "Vinay", "Sonu", "Rohit"];
+const DEFAULT_SUBMITTERS = ["Monu", "Sanjay", "Vinay", "Sonu", "Rohit","Enjmam","Kamal","Sahib",];
 
 /* =========================
    INLINE STYLES
