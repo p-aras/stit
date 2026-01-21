@@ -538,17 +538,18 @@ async function fetchIndexSheet(signal) {
 }
 async function saveAlterJobOrderToSheets(data) {
   try {
-    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxiaaTqPFddM5R6Xy61UbscwPMgpd9X5eKGmzdRLCrIOkE_2zhdoyFa9k2a9RkSZJnhng/exec";
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec";
     
     console.log('📤 Sending data to Apps Script:', {
       lotNumber: data.lotNumber,
       kharchaTotal: data.kharchaTotal,
       embPendingTotal: data.embPendingTotal,
+       masterGltiTotal: data.masterGltiTotal,
       totalAlterPcs: data.totalAlterPcs
     });
     
     // Prepare the data object exactly like your Zip system
-    const payload = {
+     const payload = {
       lotNumber: data.lotNumber || '',
       fabric: data.fabric || '',
       garmentType: data.garmentType || '',
@@ -559,8 +560,10 @@ async function saveAlterJobOrderToSheets(data) {
       supervisor: data.supervisor || '',
       kharchaTotal: data.kharchaTotal || 0,
       embPendingTotal: data.embPendingTotal || 0,
+      masterGltiTotal: data.masterGltiTotal || 0, // Add this line
       totalAlterPcs: data.totalAlterPcs || 0,
-      alterCounts: data.alterCounts || {}
+      alterCounts: data.alterCounts || {},
+      masterGltiCounts: data.masterGltiCounts || {} // Add this line
     };
     
     console.log('📦 Full payload:', JSON.stringify(payload));
@@ -598,7 +601,7 @@ async function saveAlterJobOrderToSheets(data) {
       console.log('🔄 Trying GET fallback...');
       
       // Build simple URL with essential parameters - USE THE SAME PATTERN AS YOUR ZIP SYSTEM
-      const baseUrl = "https://script.google.com/macros/s/AKfycbxiaaTqPFddM5R6Xy61UbscwPMgpd9X5eKGmzdRLCrIOkE_2zhdoyFa9k2a9RkSZJnhng/exec";
+      const baseUrl = "https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec";
       const params = new URLSearchParams();
       
       // Send all data as parameters
@@ -1337,7 +1340,7 @@ function findLotInIndex(indexData, lotNo) {
 // ============================
 // PDF Generation (Optimized) - Single QR Code Version
 // ============================
-async function generateIssuePdf(matrix, { issueDate, supervisor, alterCounts }) {
+async function generateIssuePdf(matrix, { issueDate, supervisor, alterCounts, masterGltiCounts = {} }) {
   if (!matrix) return;
 
   // Function to load QR code
@@ -1358,21 +1361,42 @@ async function generateIssuePdf(matrix, { issueDate, supervisor, alterCounts }) 
     });
   }
 
-  // Generate QR codes
+  // Generate QR codes (keep existing functions same)
   async function generateCuttingQRCode(lotNumber) {
-    const trackingUrl = `https://script.google.com/macros/s/AKfycbxiaaTqPFddM5R6Xy61UbscwPMgpd9X5eKGmzdRLCrIOkE_2zhdoyFa9k2a9RkSZJnhng/exec?action=showCuttingOptions&lot=${lotNumber}`;
+    const trackingUrl = `https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec?action=showCuttingOptions&lot=${lotNumber}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(trackingUrl)}`;
     return await loadQRCodeImage(qrUrl);
   }
+  // Add this function with your other QR code generators
+async function generateFabricIssuedQRCode(lotNumber) {
+  const trackingUrl = `https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec?action=showFabricIssuedOptions&lot=${lotNumber}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(trackingUrl)}`;
+  
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 120;
+      canvas.height = 120;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, 120, 120);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Failed to load Fabric Issued QR code image'));
+    img.src = qrUrl;
+  });
+}
+
 
   async function generateEmbPrintingQRCode(lotNumber) {
-    const trackingUrl = `https://script.google.com/macros/s/AKfycbxiaaTqPFddM5R6Xy61UbscwPMgpd9X5eKGmzdRLCrIOkE_2zhdoyFa9k2a9RkSZJnhng/exec?action=showEmbPrintingOptions&lot=${lotNumber}`;
+    const trackingUrl = `https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec?action=showEmbPrintingOptions&lot=${lotNumber}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(trackingUrl)}`;
     return await loadQRCodeImage(qrUrl);
   }
 
   async function generateStitchingQRCode(lotNumber) {
-    const trackingUrl = `https://script.google.com/macros/s/AKfycbxiaaTqPFddM5R6Xy61UbscwPMgpd9X5eKGmzdRLCrIOkE_2zhdoyFa9k2a9RkSZJnhng/exec?action=showStitchingOptions&lot=${lotNumber}`;
+    const trackingUrl = `https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec?action=showStitchingOptions&lot=${lotNumber}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(trackingUrl)}`;
     return await loadQRCodeImage(qrUrl);
   }
@@ -1408,6 +1432,7 @@ async function generateIssuePdf(matrix, { issueDate, supervisor, alterCounts }) 
   const cuttingQRCode = await generateCuttingQRCode(matrix.lotNumber);
   const embPrintingQRCode = await generateEmbPrintingQRCode(matrix.lotNumber);
   const stitchingQRCode = await generateStitchingQRCode(matrix.lotNumber);
+  const fabricIssuedQRCode = await generateFabricIssuedQRCode(matrix.lotNumber);
 
   // Professional Header with black & white styling
   async function addHeader(currentPage) {
@@ -1534,7 +1559,7 @@ async function generateIssuePdf(matrix, { issueDate, supervisor, alterCounts }) 
 
   const tableTop = headerBottomY + 15;
 
-  // Table headers
+  // Table headers - UPDATED to include Master ki Glti
   const head = [[ 
     'KARIGAR', 
     'C.TABLE', 
@@ -1542,49 +1567,62 @@ async function generateIssuePdf(matrix, { issueDate, supervisor, alterCounts }) 
     ...sizes, 
     'PCS', 
     'KHARCHA ALTER', 
-    'EMB/PRINT ALTER' 
+    'EMB/PRINT ALTER',
+    'MASTER KI GLTI'  // Added new header
   ]];
 
-  // Calculate totals
-  let totalKharchaPcs = 0;
-  let totalEmbPcs = 0;
+  // Calculate totals - UPDATED to include Master ki Glti
+// Calculate totals - UPDATED to include Master ki Glti
+let totalKharchaPcs = 0;
+let totalEmbPcs = 0;
+let totalMasterGltiPcs = 0; // Added for Master ki Glti
   
-  const body = (matrix.rows || []).map((r, index) => {
-    const rowAlters = alterCounts ? alterCounts[index] || [] : [];
-    
-    let kharchaTotal = 0;
-    let embTotal = 0;
-    
-    rowAlters.forEach(entry => {
-      const pcs = parseInt(entry.pcs) || 0;
-      if (entry.category === 'kharcha') kharchaTotal += pcs;
-      else if (entry.category === 'emb_pending') embTotal += pcs;
-    });
-    
-    totalKharchaPcs += kharchaTotal;
-    totalEmbPcs += embTotal;
-    
-    return [
-      valOrEmpty(r.karigar || ''),
-      valOrEmpty(r.cuttingTable),
-      valOrEmpty(r.color || ''), // Color name - will be wrapped
-      ...sizes.map(s => valOrEmpty(r.sizes?.[s])),
-      valOrEmpty(r.totalPcs),
-      kharchaTotal > 0 ? valOrEmpty(kharchaTotal) : '0',
-      embTotal > 0 ? valOrEmpty(embTotal) : '0',
-    ];
+const body = (matrix.rows || []).map((r, index) => {
+  const rowAlters = alterCounts ? alterCounts[index] || [] : [];
+  const rowMasterGlti = masterGltiCounts ? masterGltiCounts[index] || {} : {};
+  
+  let kharchaTotal = 0;
+  let embTotal = 0;
+  let masterGltiTotal = 0; // Added for Master ki Glti
+  
+  // Calculate from alterCounts (kharcha and emb)
+  rowAlters.forEach(entry => {
+    const pcs = parseInt(entry.pcs) || 0;
+    if (entry.category === 'kharcha') kharchaTotal += pcs;
+    else if (entry.category === 'emb_pending') embTotal += pcs;
   });
-
-  const totalAlterPcs = totalKharchaPcs + totalEmbPcs;
+  
+  // Calculate from masterGltiCounts
+  if (rowMasterGlti && rowMasterGlti.pcs) {
+    masterGltiTotal = parseInt(rowMasterGlti.pcs) || 0;
+  }
+  
+  totalKharchaPcs += kharchaTotal;
+  totalEmbPcs += embTotal;
+  totalMasterGltiPcs += masterGltiTotal; // Added for Master ki Glti
+  
+  return [
+    valOrEmpty(r.karigar || ''),
+    valOrEmpty(r.cuttingTable),
+    valOrEmpty(r.color || ''), // Color name - will be wrapped
+    ...sizes.map(s => valOrEmpty(r.sizes?.[s])),
+    valOrEmpty(r.totalPcs),
+    kharchaTotal > 0 ? valOrEmpty(kharchaTotal) : '0',
+    embTotal > 0 ? valOrEmpty(embTotal) : '0',
+    masterGltiTotal > 0 ? valOrEmpty(masterGltiTotal) : '0' // Added for Master ki Glti
+  ];
+});
+  const totalAlterPcs = totalKharchaPcs + totalEmbPcs + totalMasterGltiPcs; // Updated
   const totalLotPcs = matrix.totals?.grand || 0;
 
-  // Footer row
+  // Footer row - UPDATED to include Master ki Glti
   const foot = [[
     '', '', 'TOTAL',
     ...sizes.map(() => ''),
     valOrEmpty(totalLotPcs),
     valOrEmpty(totalKharchaPcs),
     valOrEmpty(totalEmbPcs),
+    valOrEmpty(totalMasterGltiPcs), // Added for Master ki Glti
   ]];
 
   const CM2 = CM;
@@ -1593,7 +1631,7 @@ async function generateIssuePdf(matrix, { issueDate, supervisor, alterCounts }) 
   // Calculate column widths - Reduced size columns, increased color column
   const sizesCount = sizes.length;
   
-  // Column widths allocation
+  // Column widths allocation - UPDATED to include Master ki Glti
   const columnConfig = [
     { name: 'karigar', width: 50, align: 'left' },    // Karigar
     { name: 'table', width: 40, align: 'center' },    // Cutting Table
@@ -1602,13 +1640,14 @@ async function generateIssuePdf(matrix, { issueDate, supervisor, alterCounts }) 
     { name: 'pcs', width: 30, align: 'center' },      // PCS
     { name: 'kharcha', width: 60, align: 'center' },  // Kharcha Alter
     { name: 'emb', width: 60, align: 'center' },      // Emb/Print Alter
+    { name: 'master_glti', width: 60, align: 'center' }, // Added: Master ki Glti
   ];
   
   const fixedWidth = columnConfig.reduce((sum, col) => sum + col.width, 0);
   const sizesWidth = availableWidth - fixedWidth;
   const sizeW = sizesCount > 0 ? Math.max(14, Math.floor(sizesWidth / sizesCount)) : 0;
 
-  // Column styles for black & white printing
+  // Column styles for black & white printing - UPDATED to include Master ki Glti
   const colStyles = {};
   let colIndex = 0;
   
@@ -1666,6 +1705,14 @@ async function generateIssuePdf(matrix, { issueDate, supervisor, alterCounts }) 
   };
   
   // EMB/PRINT ALTER
+  colStyles[colIndex++] = { 
+    cellWidth: 60, 
+    halign: 'center',
+    fontStyle: 'bold',
+    fontSize: 8
+  };
+  
+  // MASTER KI GLTI - Added new column style
   colStyles[colIndex++] = { 
     cellWidth: 60, 
     halign: 'center',
@@ -1745,23 +1792,24 @@ textColor: [0, 0, 0],       // Dark black
   // Get position after table
   const afterTableY = doc.lastAutoTable ? (doc.lastAutoTable.finalY + 20) : (tableTop + 200);
 
-  // Draw bottom sections
+  // Draw bottom sections - NEED TO UPDATE THIS TO INCLUDE MASTER KI GLTI
   const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
   const totalPages = doc.internal.getNumberOfPages();
   
   if (currentPage === totalPages) {
-    await drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlterPcs, totalKharchaPcs, totalEmbPcs, totalLotPcs, cuttingQRCode, embPrintingQRCode, stitchingQRCode);
+  await drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlterPcs, totalKharchaPcs, totalEmbPcs, totalMasterGltiPcs, totalLotPcs, cuttingQRCode, embPrintingQRCode, stitchingQRCode, fabricIssuedQRCode);
   }
 
   const fname = `Lot_${matrix.lotNumber || 'Unknown'}_Alter_Job-Order_${printableDate(issueDate).replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
   doc.save(fname);
 }
 
-// Bottom sections with black & white styling
-async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlterPcs, totalKharchaPcs, totalEmbPcs, totalLotPcs, cuttingQRCode, embPrintingQRCode, stitchingQRCode) {
+// Update drawBottomSections function to include Master ki Glti
+// COMPLETE UPDATED drawBottomSections function with 4 QR codes in single line
+async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlterPcs, totalKharchaPcs, totalEmbPcs, totalMasterGltiPcs, totalLotPcs, cuttingQRCode, embPrintingQRCode, stitchingQRCode, fabricIssuedQRCode) {
   const totalAvailableWidth = W - (2 * CM2);
   
-  // SECTION 1: Three Boxes
+  // SECTION 1: Three Boxes (Keep existing code as is)
   const boxesY = afterTableY + 25;
   const boxHeight = 90;
   const boxGap = 12;
@@ -1789,7 +1837,7 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
     return { contentStartY: y + 30 };
   }
   
-  // Box 1: Alter Eligibility - FIXED width variable issue
+  // Box 1: Alter Eligibility
   const box1X = CM2;
   const box1Content = drawBox(box1X, boxesY, boxWidth, boxHeight, 'ALTER ELIGIBILITY');
   const box1ContentY = box1Content.contentStartY;
@@ -1865,23 +1913,38 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   const box3ContentY = box3Content.contentStartY;
   
   // Breakdown table
-  const breakdownData = [
-    { label: 'Kharcha Alter:', value: `${totalKharchaPcs}` },
-    { label: 'Emb/Printing Alter:', value: `${totalEmbPcs}` },
-    { label: 'TOTAL ALTER:', value: `${totalAlterPcs}` }
-  ];
-  
+ const breakdownData = [
+  { label: 'Kharcha Alter:', value: `${totalKharchaPcs}` },
+  { label: 'Emb/Printing Alter:', value: `${totalEmbPcs}` },
+  { label: 'Master ki Glti:', value: `${totalMasterGltiPcs}` },
+  { label: 'TOTAL ALTER:', value: `${totalAlterPcs}` }
+];
   let breakdownY = box3ContentY;
   breakdownData.forEach((item, index) => {
-    const isTotal = index === 2;
+    const isTotal = index === 3;
     
     doc.setFont('times', isTotal ? 'bold' : 'bold');
     doc.setFontSize(isTotal ? 10 : 9);
+    
+    // Color coding for different alter types
+    if (item.label === 'Kharcha Alter:') {
+      doc.setTextColor(220, 38, 38); // Red for Kharcha
+    } else if (item.label === 'Emb/Printing Alter:') {
+      doc.setTextColor(22, 163, 74); // Green for Emb/Printing
+    } else if (item.label === 'Master ki Glti:') {
+      doc.setTextColor(147, 51, 234); // Purple for Master ki Glti
+    } else {
+      doc.setTextColor(0, 0, 0); // Black for total
+    }
+    
     doc.text(item.label, box3X + 15, breakdownY);
     
     doc.setFont('times', 'bold');
     doc.setFontSize(isTotal ? 12 : 10);
     doc.text(`${item.value} PCs`, box3X + boxWidth - 15, breakdownY, { align: 'right' });
+    
+    // Reset color
+    doc.setTextColor(0, 0, 0);
     
     breakdownY += isTotal ? 20 : 18;
   });
@@ -1889,13 +1952,15 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   // Reset
   doc.setDrawColor(0, 0, 0);
   
-  // SECTION 2: QR Codes Section
+  // ==============================================
+  // SECTION 2: ALL 4 QR CODES IN SINGLE LINE
+  // ==============================================
   const qrSectionY = boxesY + boxHeight + 35;
-  const qrGap = 30;
-  const qrSize = 80;
+  const qrGap = 25;
+  const qrSize = 65;
   
-  // Calculate total QR section width
-  const qrTotalWidth = (qrSize * 3) + (qrGap * 2);
+  // Calculate total width for 4 QR codes
+  const qrTotalWidth = (qrSize * 4) + (qrGap * 3);
   const qrStartX = CM2 + (totalAvailableWidth - qrTotalWidth) / 2;
   
   // QR Code styling function
@@ -1912,28 +1977,60 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
         doc.addImage(qrCode, 'PNG', x + 3, y + 3, size - 6, size - 6);
       } catch (error) {
         doc.setFont('times', 'bold'); 
-        doc.setFontSize(9);
-        doc.text('QR CODE', x + size/2, y + size/2, { align: 'center' });
+        doc.setFontSize(8);
+        doc.text('QR', x + size/2, y + size/2, { align: 'center' });
+        doc.rect(x, y, size, size);
       }
     }
     
-    // Department title
+    // Department title (two lines if needed)
     doc.setFont('times', 'bold'); 
-    doc.setFontSize(12);
-    doc.text(title, x + size/2, y + size + 15, { align: 'center' });
+    doc.setFontSize(9);
     
-    // Instruction
-    doc.setFont('times', 'bold'); 
-    doc.setFontSize(8);
-    doc.text('Scan to Update Status', x + size/2, y + size + 28, { align: 'center' });
+    // Split title if it has multiple words
+    const titleWords = title.split(' ');
+    if (titleWords.length > 1) {
+      // Two-line title for "FABRIC ISSUED"
+      const firstPart = titleWords.slice(0, Math.ceil(titleWords.length/2)).join(' ');
+      const secondPart = titleWords.slice(Math.ceil(titleWords.length/2)).join(' ');
+      
+      doc.text(firstPart, x + size/2, y + size + 12, { align: 'center' });
+      doc.text(secondPart, x + size/2, y + size + 24, { align: 'center' });
+      
+      // Instruction below second line
+      doc.setFont('times', 'bold'); 
+      doc.setFontSize(6);
+      doc.text('Scan to Track', x + size/2, y + size + 35, { align: 'center' });
+    } else {
+      // Single word title
+      doc.text(title, x + size/2, y + size + 15, { align: 'center' });
+      
+      // Instruction
+      doc.setFont('times', 'bold'); 
+      doc.setFontSize(7);
+      doc.text('Scan to Track', x + size/2, y + size + 28, { align: 'center' });
+    }
   }
   
-  // Draw three QR code sections
+  // Draw ALL FOUR QR code sections in ONE LINE
   drawQRCodeSection(qrStartX, qrSectionY, qrSize, cuttingQRCode, 'CUTTING');
   drawQRCodeSection(qrStartX + qrSize + qrGap, qrSectionY, qrSize, embPrintingQRCode, 'EMB/PRINTING');
   drawQRCodeSection(qrStartX + (qrSize + qrGap) * 2, qrSectionY, qrSize, stitchingQRCode, 'STITCHING');
+  drawQRCodeSection(qrStartX + (qrSize + qrGap) * 3, qrSectionY, qrSize, fabricIssuedQRCode, 'FABRIC ISSUED');
   
+  // Add a title above the QR codes
+  doc.setFont('times', 'bold'); 
+  doc.setFontSize(12);
+  doc.text('TRACKING QR CODES', W / 2, qrSectionY - 20, { align: 'center' });
+  
+  // Add separator line above QR codes
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.5);
+  doc.line(CM2, qrSectionY - 30, W - CM2, qrSectionY - 30);
+  
+  // ==============================================
   // SECTION 3: Signature Section at Bottom
+  // ==============================================
   const signatureY = H - 70;
   const signatureBoxWidth = totalAvailableWidth / 3;
   const signaturePadding = 30;
@@ -1976,6 +2073,9 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   doc.setLineWidth(0.5);
   doc.rect(15, 15, W - 30, H - 30);
 }
+
+// Bottom sections with black & white styling
+
 
 // Helper function for printable date
 function printableDate(dateStr) {
@@ -3104,6 +3204,8 @@ export default function AlterJObOrder() {
   const t = translations[language];
   const [alterCounts, setAlterCounts] = useState({});
   // const [totalAlterPcs, setTotalAlterPcs] = useState(0);
+  const [masterGltiCounts, setMasterGltiCounts] = useState({});
+
 
   const [showIssueDialog, setShowIssueDialog] = useState(false);
   const [issueDate, setIssueDate] = useState(() => todayLocalISO());
@@ -3141,7 +3243,25 @@ const totalAlterPcs = useMemo(() => {
 
 // Calculate Kharcha alter PCs
 
+const handleMasterGltiChange = (rowIndex, value) => {
+  setMasterGltiCounts({
+    ...masterGltiCounts,
+    [rowIndex]: {
+      pcs: value,
+      description: '' // Add description field if needed
+    }
+  });
+};
 
+// Calculate total Master ki Glti PCs
+const totalMasterGltiPcs = useMemo(() => {
+  return Object.values(masterGltiCounts).reduce((sum, rowData) => {
+    if (rowData && rowData.pcs) {
+      return sum + (parseInt(rowData.pcs) || 0);
+    }
+    return sum;
+  }, 0);
+}, [masterGltiCounts]);
 // Calculate per-row alter PCs
 const rowAlterPcs = (rowIndex) => {
   const rowAlters = alterCounts[rowIndex] || [];
@@ -3501,20 +3621,23 @@ const handleConfirmIssue = async () => {
 
   try {
     // 1. Prepare data for submission
-    const submissionData = {
-      lotNumber: matrix.lotNumber || '',
-      fabric: matrix.fabric || '',
-      garmentType: matrix.garmentType || '',
-      style: matrix.style || '',
-      brand: matrix.brand || '',
-      totalPcs: matrix.totals?.grand || 0,
-      issueDate: issueDate || '',
-      supervisor: supervisor || '',
-      kharchaTotal: totalKharchaPcs || 0,
-      embPendingTotal: totalEmbPendingPcs || 0,
-      totalAlterPcs: totalAlterPcs || 0,
-      alterCounts: alterCounts || {}
-    };
+  // In handleConfirmIssue function
+const submissionData = {
+  lotNumber: matrix.lotNumber || '',
+  fabric: matrix.fabric || '',
+  garmentType: matrix.garmentType || '',
+  style: matrix.style || '',
+  brand: matrix.brand || '',
+  totalPcs: matrix.totals?.grand || 0,
+  issueDate: issueDate || '',
+  supervisor: supervisor || '',
+  kharchaTotal: totalKharchaPcs || 0,
+  embPendingTotal: totalEmbPendingPcs || 0,
+  masterGltiTotal: totalMasterGltiPcs || 0, // Add this
+  totalAlterPcs: (totalKharchaPcs + totalEmbPendingPcs + totalMasterGltiPcs) || 0, // Update this
+  alterCounts: alterCounts || {},
+  masterGltiCounts: masterGltiCounts || {} // Add this
+};
 
     console.log('📤 Preparing to submit data:', submissionData);
 
@@ -3531,14 +3654,17 @@ const handleConfirmIssue = async () => {
     }
 
     // 3. Generate PDF
-    setSubmissionStatus('generating_pdf');
-    console.log('Generating PDF...');
-    
-    await generateIssuePdf(matrix, { 
-      issueDate, 
-      supervisor, 
-      alterCounts 
-    });
+// 3. Generate PDF
+setSubmissionStatus('generating_pdf');
+console.log('Generating PDF...');
+console.log('Master Glti counts for PDF:', masterGltiCounts); // Debug log
+
+await generateIssuePdf(matrix, { 
+  issueDate, 
+  supervisor, 
+  alterCounts,
+  masterGltiCounts // ADD THIS LINE
+});
 
     // 4. Update cache and state
     const cacheKey = generateIssueStatusCacheKey(matrix.lotNumber);
@@ -3599,7 +3725,7 @@ const validateAlters = () => {
   }, [matrix]);
 
 const columns = useMemo(
-  () => (matrix ? ['Color', 'Cutting Table', ...displaySizes, 'Total Pcs', 'Kharcha Alter PCs', 'Kharcha Type', 'Emb Alter PCs', 'Emb Type'] : []),
+  () => (matrix ? ['Color', 'Cutting Table', ...displaySizes, 'Total Pcs', 'Kharcha Alter PCs', 'Kharcha Type', 'Emb Alter PCs', 'Emb Type', 'Master ki Glti', 'Master ki glti pcs'] : []),
   [matrix, displaySizes]
 );
 const getStatusMessage = () => {
@@ -3815,6 +3941,7 @@ function formatAlterDetailsForPdf(alterDetails) {
               <PanelHeader><FiGrid /><h3>{t.cuttingMatrix}</h3></PanelHeader>
         <TableContainer>
   <Table>
+// In the Table component, fix the column order:
 <thead>
   <tr>
     <th>{t.color}</th>
@@ -3825,6 +3952,8 @@ function formatAlterDetailsForPdf(alterDetails) {
     <th>Kharcha Type</th>
     <th>Emb Alter PCs</th>
     <th>Emb Type</th>
+    <th>Master ki Glti</th> {/* Type column */}
+    <th>Master ki glti pcs</th> {/* PCs column */}
   </tr>
 </thead>
 <tbody>
@@ -3840,8 +3969,13 @@ function formatAlterDetailsForPdf(alterDetails) {
     const kharchaTotal = kharchaAlters.reduce((sum, entry) => sum + (parseInt(entry.pcs) || 0), 0);
     const embTotal = embAlters.reduce((sum, entry) => sum + (parseInt(entry.pcs) || 0), 0);
     
+    // Get Master ki Glti data
+    const masterGltiData = masterGltiCounts[rowIdx] || {};
+    const masterGltiPcs = parseInt(masterGltiData.pcs) || 0;
+    
     const isKharchaExceeding = kharchaTotal > rowTotalPcs;
     const isEmbExceeding = embTotal > rowTotalPcs;
+    const isMasterGltiExceeding = masterGltiPcs > rowTotalPcs;
     
     return (
       <React.Fragment key={rowIdx}>
@@ -4043,6 +4177,88 @@ function formatAlterDetailsForPdf(alterDetails) {
           }}>
             {embTotal > 0 ? 'Emb/Printing' : ''}
           </td>
+
+          {/* Master ki Glti PCs - Changed order to match Kharcha pattern */}
+          <td className="num" style={{ 
+            color: isMasterGltiExceeding ? '#9333ea' : '#1e293b',
+            fontWeight: masterGltiPcs > 0 ? '600' : 'bold'
+          }}>
+            {masterGltiPcs > 0 ? (
+              <input
+                type="number"
+                min="1"
+                max={rowTotalPcs}
+                value={masterGltiPcs}
+                onChange={(e) => {
+                  const newValue = e.target.value;
+                  setMasterGltiCounts({
+                    ...masterGltiCounts,
+                    [rowIdx]: {
+                      ...masterGltiData,
+                      pcs: newValue
+                    }
+                  });
+                }}
+                style={{
+                  width: '70px',
+                  padding: '4px 8px',
+                  border: isMasterGltiExceeding ? '1px solid #9333ea' : '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '0.9rem',
+                  background: 'white',
+                  color: isMasterGltiExceeding ? '#9333ea' : '#1e293b',
+                  textAlign: 'center'
+                }}
+              />
+            ) : (
+              <input
+                type="number"
+                min="1"
+                max={rowTotalPcs}
+                placeholder="0"
+                onChange={(e) => {
+                  const newValue = e.target.value;
+                  if (newValue && parseInt(newValue) > 0) {
+                    setMasterGltiCounts({
+                      ...masterGltiCounts,
+                      [rowIdx]: {
+                        pcs: newValue,
+                        description: ''
+                      }
+                    });
+                  }
+                }}
+                style={{
+                  width: '70px',
+                  padding: '4px 8px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '0.9rem',
+                  background: '#f9fafb',
+                  color: '#6b7280',
+                  textAlign: 'center'
+                }}
+              />
+            )}
+            {isMasterGltiExceeding && (
+              <div style={{ 
+                fontSize: '0.7rem', 
+                color: '#9333ea',
+                fontWeight: 'bold',
+                marginTop: '4px'
+              }}>
+                Max: {rowTotalPcs}
+              </div>
+            )}
+          </td>
+          
+          {/* Master ki Glti Type - Displays "Master ki Glti" when there are PCs */}
+          <td className="num" style={{ 
+            color: '#9333ea',
+            fontWeight: masterGltiPcs > 0 ? '600' : 'bold'
+          }}>
+            {masterGltiPcs > 0 ? 'Master ki Glti' : ''}
+          </td>
         </tr>
       </React.Fragment>
     );
@@ -4067,6 +4283,12 @@ function formatAlterDetailsForPdf(alterDetails) {
     </td>
     <td className="num strong" style={{ color: totalEmbPendingPcs > 0 ? '#16a34a' : '#6b7280' }}>
       {totalEmbPendingPcs > 0 ? 'Emb/Printing' : ''}
+    </td>
+    <td className="num strong" style={{ color: totalMasterGltiPcs > 0 ? '#9333ea' : '#1e293b' }}>
+      {totalMasterGltiPcs}
+    </td>
+    <td className="num strong" style={{ color: totalMasterGltiPcs > 0 ? '#9333ea' : '#6b7280' }}>
+      {totalMasterGltiPcs > 0 ? 'Master ki Glti' : ''}
     </td>
   </tr>
 </tfoot>
