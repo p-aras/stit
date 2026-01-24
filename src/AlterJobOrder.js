@@ -162,11 +162,11 @@ const translations = {
     total: "Total",
     
     // Buttons
-    submitToStitching: "Submit to Stitching",
+    submitToStitching: "Submit to Alter JobOrder",
     alreadyIssued: "Already Issued",
     
     // Dialog
-    issueToStitching: "Issue to Stitching",
+    issueToStitching: "Issue For Alter JobOrder Challan",
     dateOfIssue: "Date of Issue",
     supervisor: "Supervisor",
     add: "Add",
@@ -540,16 +540,18 @@ async function saveAlterJobOrderToSheets(data) {
   try {
     const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec";
     
-    console.log('📤 Sending data to Apps Script:', {
-      lotNumber: data.lotNumber,
-      kharchaTotal: data.kharchaTotal,
-      embPendingTotal: data.embPendingTotal,
-       masterGltiTotal: data.masterGltiTotal,
-      totalAlterPcs: data.totalAlterPcs
-    });
+    // DEBUG: Check what we're sending
+    console.log('🔍 Master Glti Total being sent:', data.masterGltiTotal);
+    console.log('🔍 Master Glti Counts being sent:', data.masterGltiCounts);
+    console.log('🔍 Has masterGltiCounts:', Object.keys(data.masterGltiCounts || {}).length > 0);
+    console.log('🔍 Total Alter PCS calculation:', 
+      (data.kharchaTotal || 0) + 
+      (data.embPendingTotal || 0) + 
+      (data.masterGltiTotal || 0)
+    );
     
-    // Prepare the data object exactly like your Zip system
-     const payload = {
+    // Prepare the data object exactly like your Apps Script expects
+    const payload = {
       lotNumber: data.lotNumber || '',
       fabric: data.fabric || '',
       garmentType: data.garmentType || '',
@@ -560,15 +562,15 @@ async function saveAlterJobOrderToSheets(data) {
       supervisor: data.supervisor || '',
       kharchaTotal: data.kharchaTotal || 0,
       embPendingTotal: data.embPendingTotal || 0,
-      masterGltiTotal: data.masterGltiTotal || 0, // Add this line
-      totalAlterPcs: data.totalAlterPcs || 0,
+      masterGltiTotal: data.masterGltiTotal || 0,
+      totalAlterPcs: (data.kharchaTotal || 0) + (data.embPendingTotal || 0) + (data.masterGltiTotal || 0),
       alterCounts: data.alterCounts || {},
-      masterGltiCounts: data.masterGltiCounts || {} // Add this line
+      masterGltiCounts: data.masterGltiCounts || {}
     };
     
-    console.log('📦 Full payload:', JSON.stringify(payload));
+    console.log('📦 Full payload being sent:', JSON.stringify(payload, null, 2));
     
-    // Send as pure JSON like your Zip system
+    // Send as pure JSON
     const response = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: {
@@ -600,11 +602,11 @@ async function saveAlterJobOrderToSheets(data) {
     try {
       console.log('🔄 Trying GET fallback...');
       
-      // Build simple URL with essential parameters - USE THE SAME PATTERN AS YOUR ZIP SYSTEM
+      // Build simple URL with essential parameters
       const baseUrl = "https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec";
       const params = new URLSearchParams();
       
-      // Send all data as parameters
+      // Send all data as parameters, including masterGltiCounts as JSON string
       params.append('lotNumber', data.lotNumber || '');
       params.append('fabric', data.fabric || '');
       params.append('garmentType', data.garmentType || '');
@@ -615,16 +617,17 @@ async function saveAlterJobOrderToSheets(data) {
       params.append('supervisor', data.supervisor || '');
       params.append('kharchaTotal', data.kharchaTotal || 0);
       params.append('embPendingTotal', data.embPendingTotal || 0);
-      params.append('totalAlterPcs', data.totalAlterPcs || 0);
+      params.append('masterGltiTotal', data.masterGltiTotal || 0);
+      params.append('totalAlterPcs', (data.kharchaTotal || 0) + (data.embPendingTotal || 0) + (data.masterGltiTotal || 0));
       params.append('alterCounts', JSON.stringify(data.alterCounts || {}));
+      params.append('masterGltiCounts', JSON.stringify(data.masterGltiCounts || {})); // Add this
       
       const url = `${baseUrl}?${params.toString()}`;
-      console.log('🔄 GET URL length:', url.length);
       console.log('🔄 GET URL (first 500 chars):', url.substring(0, 500));
       
       const response = await fetch(url, {
         method: 'GET',
-        mode: 'no-cors' // Use no-cors for fallback
+        mode: 'no-cors'
       });
       
       console.log('📥 GET fallback sent');
@@ -1387,7 +1390,26 @@ async function generateFabricIssuedQRCode(lotNumber) {
     img.src = qrUrl;
   });
 }
-
+// Add this with your other QR code generators
+async function generatePackingQRCode(lotNumber) {
+  const trackingUrl = `https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec?action=showPackingOptions&lot=${lotNumber}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(trackingUrl)}`;
+  
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 120;
+      canvas.height = 120;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, 120, 120);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Failed to load Packing QR code image'));
+    img.src = qrUrl;
+  });
+}
 
   async function generateEmbPrintingQRCode(lotNumber) {
     const trackingUrl = `https://script.google.com/macros/s/AKfycbyuuGR2VkyulsXHeEi88pcqozqa-kmI1mWIGwvjWqVQUfzR1OQ__sQsqIPZ_Fh_oMUadA/exec?action=showEmbPrintingOptions&lot=${lotNumber}`;
@@ -1429,10 +1451,12 @@ async function generateFabricIssuedQRCode(lotNumber) {
   doc.setLineWidth(line);
 
   // Generate QR codes
-  const cuttingQRCode = await generateCuttingQRCode(matrix.lotNumber);
-  const embPrintingQRCode = await generateEmbPrintingQRCode(matrix.lotNumber);
-  const stitchingQRCode = await generateStitchingQRCode(matrix.lotNumber);
-  const fabricIssuedQRCode = await generateFabricIssuedQRCode(matrix.lotNumber);
+// Generate QR codes
+const cuttingQRCode = await generateCuttingQRCode(matrix.lotNumber);
+const embPrintingQRCode = await generateEmbPrintingQRCode(matrix.lotNumber);
+const stitchingQRCode = await generateStitchingQRCode(matrix.lotNumber);
+const fabricIssuedQRCode = await generateFabricIssuedQRCode(matrix.lotNumber);
+const packingQRCode = await generatePackingQRCode(matrix.lotNumber); // Add this line
 
   // Professional Header with black & white styling
   async function addHeader(currentPage) {
@@ -1444,7 +1468,7 @@ async function generateFabricIssuedQRCode(lotNumber) {
       // Company/Organization header
       doc.setFont('times', 'bold');
       doc.setFontSize(12);
-      doc.text('GARMENT MANUFACTURING UNIT', W / 2, headerTop - 5, { align: 'center' });
+  
       
       // Main title
       doc.setFontSize(16);
@@ -1755,8 +1779,8 @@ textColor: [0, 0, 0],       // Dark black
       lineColor: [0, 0, 0]
     },
     footStyles: { 
-      fillColor: [255, 255, 255], // Dark gray for footer
-      textColor: [0, 0, 0], // White text
+      fillColor: [255, 255, 255], 
+      textColor: [0, 0, 0], 
       fontStyle: 'bold', 
       fontSize: 9,
       halign: 'center',
@@ -1797,16 +1821,15 @@ textColor: [0, 0, 0],       // Dark black
   const totalPages = doc.internal.getNumberOfPages();
   
   if (currentPage === totalPages) {
-  await drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlterPcs, totalKharchaPcs, totalEmbPcs, totalMasterGltiPcs, totalLotPcs, cuttingQRCode, embPrintingQRCode, stitchingQRCode, fabricIssuedQRCode);
+  // In generateIssuePdf function, update this call:
+await drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlterPcs, totalKharchaPcs, totalEmbPcs, totalMasterGltiPcs, totalLotPcs, cuttingQRCode, embPrintingQRCode, stitchingQRCode, fabricIssuedQRCode, packingQRCode);
   }
 
   const fname = `Lot_${matrix.lotNumber || 'Unknown'}_Alter_Job-Order_${printableDate(issueDate).replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
   doc.save(fname);
 }
 
-// Update drawBottomSections function to include Master ki Glti
-// COMPLETE UPDATED drawBottomSections function with 4 QR codes in single line
-async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlterPcs, totalKharchaPcs, totalEmbPcs, totalMasterGltiPcs, totalLotPcs, cuttingQRCode, embPrintingQRCode, stitchingQRCode, fabricIssuedQRCode) {
+async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlterPcs, totalKharchaPcs, totalEmbPcs, totalMasterGltiPcs, totalLotPcs, cuttingQRCode, embPrintingQRCode, stitchingQRCode, fabricIssuedQRCode, packingQRCode) {
   const totalAvailableWidth = W - (2 * CM2);
   
   // SECTION 1: Three Boxes (Keep existing code as is)
@@ -1830,9 +1853,11 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
     
     // Title
     doc.setFont('times', 'bold'); 
-    doc.setFontSize(10);
+    doc.setFontSize(11);
     doc.setTextColor(0, 0, 0);
     doc.text(title, x + width/2, y + 14, { align: 'center' });
+    
+    doc.line(x + 15, y + 10, x + width - 15, y + 10);
     
     return { contentStartY: y + 30 };
   }
@@ -1868,9 +1893,9 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   doc.setFontSize(10);
   
   if (totalAlterPcs <= onePercent) {
-    // doc.text('✓ WITHIN ALLOWANCE', box1X + boxWidth/2, statusY, { align: 'center' });
+    doc.text('✓ WITHIN ALLOWANCE', box1X + boxWidth/2, statusY, { align: 'center' });
   } else {
-    // doc.text('EXCEEDS LIMIT', box1X + boxWidth/2, statusY, { align: 'center' });
+    doc.text('EXCEEDS LIMIT', box1X + boxWidth/2, statusY, { align: 'center' });
     doc.setFont('times', 'bold'); 
     doc.setFontSize(8);
     doc.text('MD Approval Required', box1X + boxWidth/2, statusY + 10, { align: 'center' });
@@ -1881,7 +1906,7 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   const box2Content = drawBox(box2X, boxesY, boxWidth, boxHeight, 'AUTHORIZATION');
   const box2ContentY = box2Content.contentStartY;
   
-  doc.setFont('times', 'bold','center'); 
+  doc.setFont('times', 'bold'); 
   doc.setFontSize(9);
   doc.text('Authorization Limit:', box2X + 15, box2ContentY);
   
@@ -1891,7 +1916,7 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   
   doc.setFont('times', 'bold'); 
   doc.setFontSize(8);
-  // doc.text('(Higher of 1% or 10 PCs)', box2X + boxWidth/2, box2ContentY + 35, { align: 'center' });
+  doc.text('(Higher of 1% or 10 PCs)', box2X + boxWidth/2, box2ContentY + 35, { align: 'center' });
   
   // Signature area
   doc.setDrawColor(100, 100, 100);
@@ -1913,12 +1938,13 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   const box3ContentY = box3Content.contentStartY;
   
   // Breakdown table
- const breakdownData = [
-  { label: 'Kharcha Alter:', value: `${totalKharchaPcs}` },
-  { label: 'Emb/Printing Alter:', value: `${totalEmbPcs}` },
-  { label: 'Master ki Glti:', value: `${totalMasterGltiPcs}` },
-  { label: 'TOTAL ALTER:', value: `${totalAlterPcs}` }
-];
+  const breakdownData = [
+    { label: 'Kharcha Alter:', value: `${totalKharchaPcs}` },
+    { label: 'Emb/Printing Alter:', value: `${totalEmbPcs}` },
+    { label: 'Master ki Glti:', value: `${totalMasterGltiPcs}` },
+    { label: 'TOTAL ALTER:', value: `${totalAlterPcs}` }
+  ];
+  
   let breakdownY = box3ContentY;
   breakdownData.forEach((item, index) => {
     const isTotal = index === 3;
@@ -1953,14 +1979,14 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   doc.setDrawColor(0, 0, 0);
   
   // ==============================================
-  // SECTION 2: ALL 4 QR CODES IN SINGLE LINE
+  // SECTION 2: ALL 5 QR CODES IN SINGLE LINE (UPDATED FOR 5 CODES)
   // ==============================================
   const qrSectionY = boxesY + boxHeight + 35;
-  const qrGap = 25;
-  const qrSize = 65;
+  const qrGap = 20; // Slightly reduced gap for 5 codes
+  const qrSize = 60; // Slightly reduced size for 5 codes
   
-  // Calculate total width for 4 QR codes
-  const qrTotalWidth = (qrSize * 4) + (qrGap * 3);
+  // Calculate total width for 5 QR codes
+  const qrTotalWidth = (qrSize * 5) + (qrGap * 4); // 5 codes, 4 gaps
   const qrStartX = CM2 + (totalAvailableWidth - qrTotalWidth) / 2;
   
   // QR Code styling function
@@ -1983,40 +2009,41 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
       }
     }
     
-    // Department title (two lines if needed)
+    // Department title
     doc.setFont('times', 'bold'); 
     doc.setFontSize(9);
     
     // Split title if it has multiple words
     const titleWords = title.split(' ');
     if (titleWords.length > 1) {
-      // Two-line title for "FABRIC ISSUED"
+      // Two-line title for multi-word departments
       const firstPart = titleWords.slice(0, Math.ceil(titleWords.length/2)).join(' ');
       const secondPart = titleWords.slice(Math.ceil(titleWords.length/2)).join(' ');
       
-      doc.text(firstPart, x + size/2, y + size + 12, { align: 'center' });
-      doc.text(secondPart, x + size/2, y + size + 24, { align: 'center' });
+      doc.text(firstPart, x + size/2, y + size + 10, { align: 'center' });
+      doc.text(secondPart, x + size/2, y + size + 22, { align: 'center' });
       
       // Instruction below second line
       doc.setFont('times', 'bold'); 
       doc.setFontSize(6);
-      doc.text('Scan to Track', x + size/2, y + size + 35, { align: 'center' });
+      doc.text('Scan to Track', x + size/2, y + size + 32, { align: 'center' });
     } else {
       // Single word title
-      doc.text(title, x + size/2, y + size + 15, { align: 'center' });
+      doc.text(title, x + size/2, y + size + 12, { align: 'center' });
       
       // Instruction
       doc.setFont('times', 'bold'); 
       doc.setFontSize(7);
-      doc.text('Scan to Track', x + size/2, y + size + 28, { align: 'center' });
+      doc.text('Scan to Track', x + size/2, y + size + 24, { align: 'center' });
     }
   }
   
-  // Draw ALL FOUR QR code sections in ONE LINE
-  drawQRCodeSection(qrStartX, qrSectionY, qrSize, cuttingQRCode, 'CUTTING');
-  drawQRCodeSection(qrStartX + qrSize + qrGap, qrSectionY, qrSize, embPrintingQRCode, 'EMB/PRINTING');
-  drawQRCodeSection(qrStartX + (qrSize + qrGap) * 2, qrSectionY, qrSize, stitchingQRCode, 'STITCHING');
-  drawQRCodeSection(qrStartX + (qrSize + qrGap) * 3, qrSectionY, qrSize, fabricIssuedQRCode, 'FABRIC ISSUED');
+  // Draw ALL FIVE QR code sections in ONE LINE
+  drawQRCodeSection(qrStartX, qrSectionY, qrSize, fabricIssuedQRCode, 'FABRIC ISSUED');
+  drawQRCodeSection(qrStartX + qrSize + qrGap, qrSectionY, qrSize, cuttingQRCode, 'CUTTING');
+  drawQRCodeSection(qrStartX + (qrSize + qrGap) * 2, qrSectionY, qrSize, embPrintingQRCode, 'EMB/PRINTING');
+  drawQRCodeSection(qrStartX + (qrSize + qrGap) * 3, qrSectionY, qrSize, stitchingQRCode, 'STITCHING');
+  drawQRCodeSection(qrStartX + (qrSize + qrGap) * 4, qrSectionY, qrSize, packingQRCode, 'PACKING'); // Added Packing QR
   
   // Add a title above the QR codes
   doc.setFont('times', 'bold'); 
@@ -2029,11 +2056,11 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   doc.line(CM2, qrSectionY - 30, W - CM2, qrSectionY - 30);
   
   // ==============================================
-  // SECTION 3: Signature Section at Bottom
+  // SECTION 3: Signature Section at Bottom (UPDATED FOR 4 DEPARTMENTS)
   // ==============================================
   const signatureY = H - 70;
-  const signatureBoxWidth = totalAvailableWidth / 3;
-  const signaturePadding = 30;
+  const signatureBoxWidth = totalAvailableWidth / 4; // Changed from 3 to 4 for 4 departments
+  const signaturePadding = 25;
   
   // Draw separator line
   doc.setDrawColor(150, 150, 150);
@@ -2063,10 +2090,11 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
     doc.text('Signature with Date', x + width/2, signatureY + 30, { align: 'center' });
   }
   
-  // Draw three signature sections
+  // Draw four signature sections
   drawSignatureSection(CM2, signatureBoxWidth, 'CUTTING INCHARGE', 'Department');
   drawSignatureSection(CM2 + signatureBoxWidth, signatureBoxWidth, 'EMB/PRINTING HEAD', 'Department');
   drawSignatureSection(CM2 + signatureBoxWidth * 2, signatureBoxWidth, 'STITCHING SUPERVISOR', 'Department');
+  drawSignatureSection(CM2 + signatureBoxWidth * 3, signatureBoxWidth, 'PACKING SUPERVISOR', 'Department'); // Added Packing
   
   // Final border around entire content
   doc.setDrawColor(0, 0, 0);
@@ -3244,11 +3272,14 @@ const totalAlterPcs = useMemo(() => {
 // Calculate Kharcha alter PCs
 
 const handleMasterGltiChange = (rowIndex, value) => {
+  // Ensure value is a number or empty string
+  const numValue = value === '' ? '' : parseInt(value) || 0;
+  
   setMasterGltiCounts({
     ...masterGltiCounts,
     [rowIndex]: {
-      pcs: value,
-      description: '' // Add description field if needed
+      pcs: numValue,
+      description: masterGltiCounts[rowIndex]?.description || ''
     }
   });
 };
@@ -3604,7 +3635,7 @@ const handleConfirmIssue = async () => {
   }
   
   // Validate that alter totals are calculated
-  if (totalKharchaPcs === 0 && totalEmbPendingPcs === 0 && totalAlterPcs === 0) {
+  if (totalKharchaPcs === 0 && totalEmbPendingPcs === 0 && totalMasterGltiPcs === 0) {
     setDialogError('Please add alter quantities before submitting.');
     return;
   }
@@ -3621,25 +3652,32 @@ const handleConfirmIssue = async () => {
 
   try {
     // 1. Prepare data for submission
-  // In handleConfirmIssue function
-const submissionData = {
-  lotNumber: matrix.lotNumber || '',
-  fabric: matrix.fabric || '',
-  garmentType: matrix.garmentType || '',
-  style: matrix.style || '',
-  brand: matrix.brand || '',
-  totalPcs: matrix.totals?.grand || 0,
-  issueDate: issueDate || '',
-  supervisor: supervisor || '',
-  kharchaTotal: totalKharchaPcs || 0,
-  embPendingTotal: totalEmbPendingPcs || 0,
-  masterGltiTotal: totalMasterGltiPcs || 0, // Add this
-  totalAlterPcs: (totalKharchaPcs + totalEmbPendingPcs + totalMasterGltiPcs) || 0, // Update this
-  alterCounts: alterCounts || {},
-  masterGltiCounts: masterGltiCounts || {} // Add this
-};
+    const submissionData = {
+      lotNumber: matrix.lotNumber || '',
+      fabric: matrix.fabric || '',
+      garmentType: matrix.garmentType || '',
+      style: matrix.style || '',
+      brand: matrix.brand || '',
+      totalPcs: matrix.totals?.grand || 0,
+      issueDate: issueDate || '',
+      supervisor: supervisor || '',
+      kharchaTotal: totalKharchaPcs || 0,
+      embPendingTotal: totalEmbPendingPcs || 0,
+      masterGltiTotal: totalMasterGltiPcs || 0,
+      totalAlterPcs: totalKharchaPcs + totalEmbPendingPcs + totalMasterGltiPcs,
+      alterCounts: alterCounts || {},
+      masterGltiCounts: masterGltiCounts || {} // Make sure this is included
+    };
 
-    console.log('📤 Preparing to submit data:', submissionData);
+    // DEBUG: Check what we're sending
+    console.log('🚨 SUBMISSION DATA CHECK:', {
+      masterGltiTotal: submissionData.masterGltiTotal,
+      masterGltiCounts: submissionData.masterGltiCounts,
+      hasMasterGltiCounts: Object.keys(submissionData.masterGltiCounts).length > 0,
+      totalAlterCalculation: totalKharchaPcs + totalEmbPendingPcs + totalMasterGltiPcs
+    });
+
+    console.log('📤 Preparing to submit data:', submissionData.lotNumber);
 
     // 2. Save data to Google Sheets
     setSubmissionStatus('saving_to_sheets');
@@ -3654,17 +3692,16 @@ const submissionData = {
     }
 
     // 3. Generate PDF
-// 3. Generate PDF
-setSubmissionStatus('generating_pdf');
-console.log('Generating PDF...');
-console.log('Master Glti counts for PDF:', masterGltiCounts); // Debug log
+    setSubmissionStatus('generating_pdf');
+    console.log('Generating PDF...');
+    console.log('Master Glti counts for PDF:', masterGltiCounts);
 
-await generateIssuePdf(matrix, { 
-  issueDate, 
-  supervisor, 
-  alterCounts,
-  masterGltiCounts // ADD THIS LINE
-});
+    await generateIssuePdf(matrix, { 
+      issueDate, 
+      supervisor, 
+      alterCounts,
+      masterGltiCounts
+    });
 
     // 4. Update cache and state
     const cacheKey = generateIssueStatusCacheKey(matrix.lotNumber);
@@ -3681,6 +3718,7 @@ await generateIssuePdf(matrix, {
       setShowIssueDialog(false);
       setSubmissionStatus('');
       setAlterCounts({});
+      setMasterGltiCounts({}); // Reset master glti counts
       setConfirming(false);
       console.log('Dialog closed');
     }, 2000);
@@ -3941,7 +3979,7 @@ function formatAlterDetailsForPdf(alterDetails) {
               <PanelHeader><FiGrid /><h3>{t.cuttingMatrix}</h3></PanelHeader>
         <TableContainer>
   <Table>
-// In the Table component, fix the column order:
+
 <thead>
   <tr>
     <th>{t.color}</th>
