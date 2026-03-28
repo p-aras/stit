@@ -1,4 +1,5 @@
-// src/App.js
+// src/App.js - Updated version with SupervisorPayment and PallaJobOrder
+
 import React, {
   useMemo,
   useState,
@@ -13,6 +14,11 @@ import Welcome from "./Welcome";
 const DailyReport = lazy(() =>
   import(/* webpackChunkName: "page-daily-report" */ "./DailyReport")
 );
+/** NEW: Extrapcs Component - Note: filename is Extrapcs.js (lowercase p) */
+/** NEW: Extrapcs Component */
+const Extrapcs = lazy(() =>
+  import(/* webpackChunkName: "page-extrapcs" */ "./Extrapcs")
+);
 const IssueToStitching = lazy(() =>
   import(/* webpackChunkName: "page-issue-stitching" */ "./IssueStitching")
 );
@@ -24,7 +30,6 @@ const MaterialStitchingOrder = lazy(() =>
     /* webpackChunkName: "page-material-stitching-order" */ "./MaterialStitchingOrder"
   )
 );
-/** NEW: PackingIssueOrder */
 const PackingIssueOrder = lazy(() =>
   import(
     /* webpackChunkName: "page-packing-issue-order" */ "./PackingIssueOrder"
@@ -42,6 +47,29 @@ const DoriManagement = lazy(() =>
 const AlterJobOrder = lazy(() =>
   import(/* webpackChunkName: "page-alter-job-order" */ "./AlterJobOrder")
 );
+const CreateKarigarProfile = lazy(() =>
+  import(/* webpackChunkName: "page-create-karigar-profile" */ "./CreateKarigarProfile")
+);
+const EnterKarigarDetails = lazy(() =>
+  import(/* webpackChunkName: "page-enter-karigar-details" */ "./EnterKarigarDetails")
+);
+/** Update Lot Completion */
+const UpdateCompletionLot = lazy(() =>
+  import(/* webpackChunkName: "page-update-completion-lot" */ "./UpdateCompletionLot")
+);
+/** Create Payable Component */
+const CreatePayable = lazy(() =>
+  import(/* webpackChunkName: "page-create-payable" */ "./CreatePayable")
+);
+/** Supervisor Payment Component */
+const SupervisorPayment = lazy(() =>
+  import(/* webpackChunkName: "page-supervisor-payment" */ "./SupervisorPayment")
+);
+/** NEW: Palla Job Order Component */
+const PallaJobOrder = lazy(() =>
+  import(/* webpackChunkName: "page-palla-job-order" */ "./PallaJobOrder")
+);
+
 /** ---------- Tiny hash router (no deps) ---------- */
 function parseHash() {
   const raw = (window.location.hash || "").replace(/^#\/?/, "");
@@ -162,7 +190,7 @@ function CenterLoader({ label = "Loading..." }) {
   );
 }
 
-/** ---------- NotFound stays as-is ---------- */
+/** ---------- NotFound component ---------- */
 function NotFound({ onNavigate }) {
   return (
     <div
@@ -190,7 +218,7 @@ function NotFound({ onNavigate }) {
         <div style={{ fontSize: 48, marginBottom: 12 }}>🧭</div>
         <h2 style={{ margin: 0, fontWeight: 800 }}>Page not found</h2>
         <p style={{ opacity: 0.9 }}>
-          The component you’re trying to open doesn’t exist.
+          The component "{window.location.hash.replace('#/', '')}" doesn't exist.
         </p>
         <button
           onClick={() => onNavigate("Welcome", null)}
@@ -224,8 +252,16 @@ function prefetchAll() {
   import("./ZipManagement");
   import("./DoriManagement");
   import("./DailyUpdationSystem");
-  import("./AlterJobOrder"); // ADD THIS LINE
+  import("./AlterJobOrder");
+  import("./CreateKarigarProfile");
+  import("./EnterKarigarDetails");
+  import("./UpdateCompletionLot");
+  import("./CreatePayable");
+  import("./SupervisorPayment");
+  import("./Extrapcs"); // Add this line
+    import("./PallaJobOrder");
 }
+
 export default function App() {
   // initial view from hash OR last known (localStorage) fallback
   const initial = (() => {
@@ -242,24 +278,31 @@ export default function App() {
   const [view, setView] = useState(initial);
 
   /** keep URL + title + localStorage in sync */
-/** keep URL + title + localStorage in sync */
-useEffect(() => {
-  pushHash(view.component, view.params);
-  document.title =
-    {
-      Welcome: "Home — Garment Manager",
-      DailyReport: "Daily Report — Garment Manager",
-      IssueToStitching: "Issue to Stitching — Garment Manager",
-      RateList: "Rate List — Garment Manager",
-      MaterialStitchingOrder: "Material Stitching Order — Garment Manager",
-      PackingIssueOrder: "Packing Issue Order — Garment Manager",
-      ZipManagement: "Zip Management — Garment Manager",
-      DoriManagement: "Dori Management — Garment Manager",
-      DailyUpdationSystem: "Daily Updation System — Garment Manager",
-      AlterJobOrder: "Alter Job Order — Garment Manager", // ADD THIS LINE
-    }[view.component] || "Garment Manager";
-  localStorage.setItem("app.view", JSON.stringify(view));
-}, [view]);
+  useEffect(() => {
+    pushHash(view.component, view.params);
+    document.title =
+      {
+        Welcome: "Home — Garment Manager",
+        DailyReport: "Daily Report — Garment Manager",
+        IssueToStitching: "Issue to Stitching — Garment Manager",
+        RateList: "Rate List — Garment Manager",
+        MaterialStitchingOrder: "Material Stitching Order — Garment Manager",
+        PackingIssueOrder: "Packing Issue Order — Garment Manager",
+        ZipManagement: "Zip Management — Garment Manager",
+        DoriManagement: "Dori Management — Garment Manager",
+        DailyUpdationSystem: "Daily Updation System — Garment Manager",
+        AlterJobOrder: "Alter Job Order — Garment Manager",
+        CreateKarigarProfile: "Create Karigar Profile — Garment Manager",
+        EnterKarigarDetails: "Enter Karigar Details — Garment Manager",
+        UpdateLotCompletion: "Update Lot Completion — Garment Manager",
+        CreatePayable: "Create Payable — Garment Manager",
+        SupervisorPayment: "Supervisor Payment — Garment Manager",
+        Extrapcs: "Extrapcs — Garment Manager", // Add this line
+        
+        PallaJobOrder: "Palla Job Order — Garment Manager",
+      }[view.component] || "Garment Manager";
+    localStorage.setItem("app.view", JSON.stringify(view));
+  }, [view]);
 
   /** react to back/forward */
   useEffect(() => {
@@ -280,125 +323,227 @@ useEffect(() => {
 
   /** Navigation API used by children */
   const handleNavigate = (component, user, params = null) => {
+    console.log("Navigating to:", component); // Debug log
     startTransition(() => setView({ component, user, params }));
   };
 
   /** Page map (wrapped in ErrorBoundary + Suspense) */
-/** Page map (wrapped in ErrorBoundary + Suspense) */
-const Page = useMemo(() => {
-  const map = {
-    Welcome: () => <Welcome onNavigate={handleNavigate} />,
-    DailyReport: () => (
-      <PageErrorBoundary>
-        <Suspense fallback={<CenterLoader label="Loading Daily Report..." />}>
-          <DailyReport
-            user={view.user}
-            onNavigate={handleNavigate}
-            params={view.params}
-          />
-        </Suspense>
-      </PageErrorBoundary>
-    ),
-    IssueToStitching: () => (
-      <PageErrorBoundary>
-        <Suspense
-          fallback={<CenterLoader label="Loading Issue to Stitching..." />}
-        >
-          <IssueToStitching
-            user={view.user}
-            onNavigate={handleNavigate}
-            params={view.params}
-          />
-        </Suspense>
-      </PageErrorBoundary>
-    ),
-    RateList: () => (
-      <PageErrorBoundary>
-        <Suspense fallback={<CenterLoader label="Loading Rate List..." />}>
-          <RateList
-            user={view.user}
-            onNavigate={handleNavigate}
-            params={view.params}
-          />
-        </Suspense>
-      </PageErrorBoundary>
-    ),
-    MaterialStitchingOrder: () => (
-      <PageErrorBoundary>
-        <Suspense
-          fallback={
-            <CenterLoader label="Loading Material Stitching Order..." />
-          }
-        >
-          <MaterialStitchingOrder
-            user={view.user}
-            supervisor={view.user}
-            onNavigate={handleNavigate}
-            params={view.params}
-          />
-        </Suspense>
-      </PageErrorBoundary>
-    ),
-    ZipManagement: () => (
-      <PageErrorBoundary>
-        <Suspense fallback={<CenterLoader label="Loading Zip Management..." />}>
-          <ZipManagement
-            user={view.user}
-            onNavigate={handleNavigate}
-            params={view.params}
-          />
-        </Suspense>
-      </PageErrorBoundary>
-    ),
-    DailyUpdationSystem: () => (
-      <PageErrorBoundary>
-        <Suspense fallback={<CenterLoader label="Loading Daily Updation System..." />}>
-          <DailyUpdationSystem
-            user={view.user}
-            supervisor={view.user}
-            onNavigate={handleNavigate}
-            params={view.params}
-          />
-        </Suspense>
-      </PageErrorBoundary>
-    ),
-    PackingIssueOrder: () => (
-      <PageErrorBoundary>
-        <Suspense fallback={<CenterLoader label="Loading Packing Issue Order..." />}>
-          <PackingIssueOrder
-            user={view.user}
-            onNavigate={handleNavigate}
-            params={view.params}
-          />
-        </Suspense>
-      </PageErrorBoundary>
-    ),
-    DoriManagement: () => (
-      <PageErrorBoundary>
-        <Suspense fallback={<CenterLoader label="Loading Dori Management..." />}>
-          <DoriManagement
-            user={view.user}
-            onNavigate={handleNavigate}
-            params={view.params}
-          />
-        </Suspense>
-      </PageErrorBoundary>
-    ),
-    // ADD THIS NEW ENTRY FOR ALTER JOB ORDER
-    AlterJobOrder: () => (
-      <PageErrorBoundary>
-        <Suspense fallback={<CenterLoader label="Loading Alter Job Order..." />}>
-          <AlterJobOrder
-            user={view.user}
-            onNavigate={handleNavigate}
-            params={view.params}
-          />
-        </Suspense>
-      </PageErrorBoundary>
-    ),
-  };
-  return map[view.component] ?? (() => <NotFound onNavigate={handleNavigate} />);
-}, [view]);
+  const Page = useMemo(() => {
+    const map = {
+      Welcome: () => <Welcome onNavigate={handleNavigate} />,
+      
+      DailyReport: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Daily Report..." />}>
+            <DailyReport
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      IssueToStitching: () => (
+        <PageErrorBoundary>
+          <Suspense
+            fallback={<CenterLoader label="Loading Issue to Stitching..." />}
+          >
+            <IssueToStitching
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      RateList: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Rate List..." />}>
+            <RateList
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      // Extrapcs component - only once, with correct spelling
+    Extrapcs: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Extrapcs..." />}>
+            <Extrapcs
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      MaterialStitchingOrder: () => (
+        <PageErrorBoundary>
+          <Suspense
+            fallback={
+              <CenterLoader label="Loading Material Stitching Order..." />
+            }
+          >
+            <MaterialStitchingOrder
+              user={view.user}
+              supervisor={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      ZipManagement: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Zip Management..." />}>
+            <ZipManagement
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      DailyUpdationSystem: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Daily Updation System..." />}>
+            <DailyUpdationSystem
+              user={view.user}
+              supervisor={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      PackingIssueOrder: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Packing Issue Order..." />}>
+            <PackingIssueOrder
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      DoriManagement: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Dori Management..." />}>
+            <DoriManagement
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      AlterJobOrder: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Alter Job Order..." />}>
+            <AlterJobOrder
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      CreateKarigarProfile: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Create Karigar Profile..." />}>
+            <CreateKarigarProfile
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      EnterKarigarDetails: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Enter Karigar Details..." />}>
+            <EnterKarigarDetails
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      UpdateLotCompletion: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Update Lot Completion..." />}>
+            <UpdateCompletionLot
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      CreatePayable: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Create Payable..." />}>
+            <CreatePayable
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+              supervisor={view.user}
+              onBack={() => handleNavigate('Welcome', view.user)}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      SupervisorPayment: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Supervisor Payment..." />}>
+            <SupervisorPayment
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      PallaJobOrder: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Palla Job Order..." />}>
+            <PallaJobOrder
+              user={view.user}
+              onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+    };
+    
+    // Check if the component exists in map
+    if (!map[view.component]) {
+      console.warn(`Component "${view.component}" not found in map`);
+      return () => <NotFound onNavigate={handleNavigate} />;
+    }
+    
+    return map[view.component];
+  }, [view]);
 
   return <Page />;
 }

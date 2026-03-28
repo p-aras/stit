@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 // Stitching Supervisor specific navigation
-// Add these two new options to the STITCHING_SUPERVISOR_OPTIONS array
 const STITCHING_SUPERVISOR_OPTIONS = [
   {
     id: "daily-report",
@@ -60,21 +59,6 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Manage delivery schedules"
     ]
   },
-  // {
-  //   id: "packing-material-order",
-  //   label: "Packing Material Order",
-  //   emoji: "📦",
-  //   component: "PackingIssueOrder",
-  //   description: "Create and track material orders for packing department",
-  //   color: "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
-  //   accentColor: "#fa709a",
-  //   instructions: [
-  //     "Order packing materials",
-  //     "Track inventory levels",
-  //     "Manage supplier orders"
-  //   ]
-  // },
-  // Add these two new cards
   {
     id: "zip",
     label: "Zip Management",
@@ -105,7 +89,7 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Manage dori color and size variants"
     ]
   },
-   {
+  {
     id: "daily-updation",
     label: "Daily Updation System",
     emoji: "🔄",
@@ -120,7 +104,7 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Generate shift-wise performance reports"
     ]
   },
-    {
+  {
     id: "alter-job-order",
     label: "Alter Job Order",
     emoji: "✂️",
@@ -134,8 +118,108 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Monitor alteration progress",
       "Manage customer alteration requirements"
     ]
+  },
+  // Palla Job Order Card
+  {
+    id: "palla-job-order",
+    label: "Palla Job Order",
+    emoji: "🧣",
+    component: "PallaJobOrder",
+    description: "Create and manage palla job orders for specialized stitching and finishing operations",
+    color: "linear-gradient(135deg, #FFB347 0%, #FF8C00 100%)",
+    accentColor: "#FF8C00",
+    instructions: [
+      "Create new palla job orders with specific requirements",
+      "Assign palla work to karigars with appropriate skills",
+      "Track palla production progress and quality checks",
+      "Manage palla inventory and material requirements",
+      "Monitor palla completion status and delivery schedules"
+    ]
+  },
+    // Extra Pcs Card - Add this after the Create Payable card
+  {
+    id: "extra-pcs",
+    label: "Extra Pcs",
+    emoji: "➕",
+    component: "Extrapcs",
+    description: "Manage and track extra piece production, adjustments, and inventory corrections",
+    color: "linear-gradient(135deg, #FF6B35 0%, #F08A5D 100%)",
+    accentColor: "#FF6B35",
+    instructions: [
+      "Track extra piece production beyond planned orders",
+      "Manage adjustment entries for inventory corrections",
+      "Record damage replacements and quality adjustments",
+      "Monitor excess production for reporting",
+      "Handle special requests and sample piece management"
+    ]
+  },
+  // Create Karigar Profile Card
+  {
+    id: "create-karigar-profile",
+    label: "Create Karigar Profile",
+    emoji: "👤",
+    component: "CreateKarigarProfile",
+    description: "Create and manage artisan (karigar) profiles with skills and expertise details",
+    color: "linear-gradient(135deg, #FF512F 0%, #DD2476 100%)",
+    accentColor: "#DD2476",
+    instructions: [
+      "Register new karigar profiles",
+      "Capture skill sets and specializations",
+      "Store contact information and addresses",
+      "Track experience and expertise levels"
+    ]
+  },
+  // Enter Karigar Details Card
+  {
+    id: "enter-karigar-details",
+    label: "Enter Karigar Details",
+    emoji: "✍️",
+    component: "EnterKarigarDetails",
+    description: "Record daily work details, attendance, and production entries for karigars",
+    color: "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)",
+    accentColor: "#38ef7d",
+    instructions: [
+      "Record daily production entries",
+      "Track work hours and attendance",
+      "Enter piece-rate calculations",
+      "Monitor individual karigar performance"
+    ]
+  },
+  // Update Completion Status of Lots as Per Karigar
+  {
+    id: "update-lot-completion",
+    label: "Update Lot Completion",
+    emoji: "✅",
+    component: "UpdateLotCompletion",
+    description: "Update and track lot completion status based on karigar work progress",
+    color: "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)",
+    accentColor: "#00b09b",
+    instructions: [
+      "Update lot completion status per karigar",
+      "Track completed vs pending lots",
+      "Monitor individual karigar lot progress",
+      "Generate lot completion reports"
+    ]
+  },
+  // Create Payable Card
+  {
+    id: "create-payable",
+    label: "Create Payable",
+    emoji: "💵",
+    component: "CreatePayable",
+    description: "Manage and create payable entries for karigars, suppliers, and operational expenses",
+    color: "linear-gradient(135deg, #00b4db 0%, #0083b0 100%)",
+    accentColor: "#0083b0",
+    instructions: [
+      "Create payable entries for karigar wages",
+      "Manage supplier payment schedules",
+      "Track operational expenses and bills",
+      "Generate payment vouchers and receipts",
+      "Monitor pending and completed payments"
+    ]
   }
 ];
+
 // Google Sheets configuration for stitching supervisors
 const GOOGLE_SHEETS_CONFIG = {
   API_KEY: "AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk",
@@ -640,7 +724,7 @@ function getColorGradient(index) {
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+    background: "linear-gradient(135deg, #ffffff 0%, #ffffff 100%)",
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
     position: "relative",
     overflow: "hidden",
@@ -660,7 +744,7 @@ const styles = {
     width: "400px",
     height: "400px",
     borderRadius: "50%",
-    background: "linear-gradient(135deg, rgba(102, 126, 234, 0.03) 0%, rgba(118, 75, 162, 0.02) 100%)",
+    background: "linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.02) 100%)",
   },
   backgroundShape2: {
     position: "absolute",
@@ -669,7 +753,7 @@ const styles = {
     width: "300px",
     height: "300px",
     borderRadius: "50%",
-    background: "linear-gradient(135deg, rgba(245, 245, 245, 0.02) 0%, rgba(0, 242, 254, 0.01) 100%)",
+    background: "linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%)",
   },
   backgroundPattern: {
     position: "absolute",
@@ -677,7 +761,7 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundImage: `radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.03) 1px, transparent 0)`,
+    backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.03) 1px, transparent 0)`,
     backgroundSize: "20px 20px",
   },
   container: {
@@ -689,7 +773,7 @@ const styles = {
     maxWidth: 2200,
     margin: "0 auto",
     background: "white",
-    boxShadow: "0 0 0 1px rgba(0,0,0,0.02), 0 4px 6px -1px rgba(0,0,0,0.05)",
+    boxShadow: "0 0 0 1px rgba(255, 255, 255, 0.02), 0 4px 6px -1px rgba(255, 255, 255, 0.05)",
     transition: "all 0.3s ease-out",
   },
   containerExiting: {
@@ -752,7 +836,7 @@ const styles = {
     alignItems: "center",
     gap: 12,
     padding: "8px 16px",
-    background: "#f8fafc",
+    background: "#ffffff",
     borderRadius: 10,
     border: "1px solid #e2e8f0",
   },
@@ -962,7 +1046,7 @@ const styles = {
   dashboard: {
     maxWidth: 2100,
     margin: "0 auto",
-    background: '#f1f5f9',
+    background: '#ffffff',
   },
   welcomeHeader: {
     display: "flex",
@@ -1204,20 +1288,6 @@ const styles = {
     paddingLeft: 16,
     position: "relative",
   },
-  tipItem: {
-    fontSize: 13,
-    color: "#64748b",
-    lineHeight: 1.5,
-    marginBottom: 8,
-    paddingLeft: 16,
-    position: "relative",
-  },
-  // tipItem: "before": {
-  //   // content: "'•'",
-  //   color: "#667eea",
-  //   position: "absolute",
-  //   left: 0,
-  // },
   systemStatus: {
     background: "#f8fafc",
     borderRadius: 10,
@@ -1554,7 +1624,7 @@ button,
 }
 
 .glass-effect {
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.8);a
   backdrop-filter: blur(10px);
 }
 

@@ -1876,16 +1876,16 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   
   doc.text(`Total Lot Quantity:`, box1X + 15, box1ContentY);
   doc.setFont('times', 'bold');
-  doc.text(`${totalLotPcs} PCs`, box1X + boxWidth - 15, box1ContentY, { align: 'right' });
+  doc.text(`${totalLotPcs} Pcs`, box1X + boxWidth - 15, box1ContentY, { align: 'right' });
   
   doc.setFont('times', 'bold');
   doc.text(`1% Allowance:`, box1X + 15, box1ContentY + 16);
   doc.setFont('times', 'bold');
-  doc.text(`${onePercent} PCs`, box1X + boxWidth - 15, box1ContentY + 16, { align: 'right' });
+  doc.text(`${onePercent} Pcs`, box1X + boxWidth - 15, box1ContentY + 16, { align: 'right' });
   
   doc.text(`Actual Alter:`, box1X + 15, box1ContentY + 32);
   doc.setFont('times', 'bold');
-  doc.text(`${totalAlterPcs} PCs`, box1X + boxWidth - 15, box1ContentY + 32, { align: 'right' });
+  doc.text(`${totalAlterPcs} Palla`, box1X + boxWidth - 15, box1ContentY + 32, { align: 'right' });
   
   // Status indicator
   const statusY = boxesY + boxHeight - 20;
@@ -1912,7 +1912,7 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
   
   doc.setFont('times', 'bold'); 
   doc.setFontSize(12);
-  doc.text(`${higherValue} PCs`, box2X + boxWidth/2, box2ContentY + 25, { align: 'center' });
+  doc.text(`${higherValue} Palla`, box2X + boxWidth/2, box2ContentY + 25, { align: 'center' });
   
   doc.setFont('times', 'bold'); 
   doc.setFontSize(8);
@@ -1967,7 +1967,7 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, totalAlte
     
     doc.setFont('times', 'bold');
     doc.setFontSize(isTotal ? 12 : 10);
-    doc.text(`${item.value} PCs`, box3X + boxWidth - 15, breakdownY, { align: 'right' });
+    doc.text(`${item.value} Palla`, box3X + boxWidth - 15, breakdownY, { align: 'right' });
     
     // Reset color
     doc.setTextColor(0, 0, 0);
