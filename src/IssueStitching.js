@@ -188,7 +188,7 @@ class ApiCache {
 const translations = {
   en: {
     // Header
-    title: "Issue to Stitching",
+    title: "Issue to Stitching job Order",
     subtitle: "Search a Lot No. to view its Cutting Matrix and totals",
     searchPlaceholder: "Enter Lot No (e.g., 64003)",
     back: "Back",
