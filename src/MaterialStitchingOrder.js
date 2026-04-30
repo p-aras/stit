@@ -26,34 +26,31 @@ async function fetchExistingMSOData(sheetId, apiKey) {
   
   const existingOrders = new Map();
   
-  // Skip header row (row 0)
   for (let i = 1; i < values.length; i++) {
     const row = values[i] || [];
-    const msoNo = row[0] || ""; // MSO No column (A)
-    const date = row[1] || ""; // Date column (B)
-    const lotNo = row[2] || ""; // Lot No column (C)
-    const brand = row[3] || ""; // Brand column (D)
-    const garmentType = row[4] || ""; // Garment Type column (E)
-    const quantity = parseInt(row[5]) || 0; // Quantity column (F)
-    const unit = row[6] || ""; // Unit column (G)
-    const priority = row[7] || ""; // Priority column (H)
-    const remarks = row[8] || ""; // Remarks column (I)
-    const createdBy = row[9] || ""; // Created By column (J)
+    const msoNo = row[0] || "";
+    const date = row[1] || "";
+    const lotNo = row[2] || "";
+    const brand = row[3] || "";
+    const garmentType = row[4] || "";
+    const quantity = parseInt(row[5]) || 0;
+    const unit = row[6] || "";
+    const priority = row[7] || "";
+    const remarks = row[8] || "";
+    const createdBy = row[9] || "";
     
     if (lotNo && lotNo.trim()) {
       const normalizedLot = lotNo.trim().toLowerCase();
       
-      // If lot already exists in map, add to existing quantity
       if (existingOrders.has(normalizedLot)) {
         const existingOrder = existingOrders.get(normalizedLot);
         existingOrder.totalIssuedQuantity += quantity;
-        existingOrder.msoNumbers.push(msoNo); // Track all MSO numbers for this lot
+        existingOrder.msoNumbers.push(msoNo);
       } else {
-        // First entry for this lot
         existingOrders.set(normalizedLot, {
-          msoNumbers: [msoNo], // Array of all MSO numbers for this lot
-          totalIssuedQuantity: quantity, // Sum of all quantities issued
-          lastMSO: msoNo, // Keep track of the last MSO for reference
+          msoNumbers: [msoNo],
+          totalIssuedQuantity: quantity,
+          lastMSO: msoNo,
           date,
           lotNo,
           brand,
@@ -85,21 +82,21 @@ async function fetchLotIndex(sheetId, apiKey) {
   
   for (let i = 1; i < values.length; i++) {
     const row = values[i] || [];
-    const lotNumber = row[0] || ""; // Lot Number column (A)
-    const startRow = row[1] || ""; // StartRow column (B)
-    const numRows = row[2] || ""; // NumRows column (C)
-    const headerCols = row[3] || ""; // HeaderCols column (D)
-    const fabric = row[4] || ""; // Fabric column (E)
-    const garmentType = row[5] || ""; // Garment Type column (F)
-    const style = row[6] || ""; // Style column (G)
-    const sizes = row[7] || ""; // Sizes column (H)
-    const shades = row[8] || ""; // Shades column (I)
-    const savedAt = row[9] || ""; // Saved At column (J)
-    const dateOfIssue = row[10] || ""; // Date of Issue column (K)
-    const supervisor = row[11] || ""; // Supervisor column (L) - index 11
-    const imageUrl = row[12] || ""; // Image Url column (M) - index 12
-    const partyName = row[13] || ""; // PARTY NAME column (N) - index 13
-    const brand = row[14] || ""; // BRAND column (O) - index 14 (column 15)
+    const lotNumber = row[0] || "";
+    const startRow = row[1] || "";
+    const numRows = row[2] || "";
+    const headerCols = row[3] || "";
+    const fabric = row[4] || "";
+    const garmentType = row[5] || "";
+    const style = row[6] || "";
+    const sizes = row[7] || "";
+    const shades = row[8] || "";
+    const savedAt = row[9] || "";
+    const dateOfIssue = row[10] || "";
+    const supervisor = row[11] || "";
+    const imageUrl = row[12] || "";
+    const partyName = row[13] || "";
+    const brand = row[14] || "";
     
     if (lotNumber && startRow) {
       indexMap.set(lotNumber.trim().toLowerCase(), {
@@ -110,11 +107,11 @@ async function fetchLotIndex(sheetId, apiKey) {
         garmentType: garmentType,
         style: style,
         supervisor: supervisor ? supervisor.trim().toUpperCase() : "",
-        brand: brand ? brand.trim() : "" // Add brand from column O (index 14)
+        brand: brand ? brand.trim() : "",
+        sizes: sizes
       });
     }
     
-    // Collect supervisors from the supervisor column
     if (supervisor && supervisor.trim()) {
       supervisors.add(supervisor.trim().toUpperCase());
     }
@@ -126,7 +123,280 @@ async function fetchLotIndex(sheetId, apiKey) {
   };
 }
 
-// Fetch specific lot data using index - ONLY FOR QUANTITY
+// IMPROVED: Extract size-wise quantities from cutting sheet matrix
+// IMPROVED: Extract size-wise quantities by dynamically detecting size columns
+// IMPROVED: Extract size-wise quantities correctly from cutting sheet
+// IMPROVED: Extract size-wise quantities correctly from cutting sheet
+// IMPROVED: Extract size-wise quantities - finds the correct header row with sizes
+// IMPROVED: Extract size-wise quantities with full support for sizes up to 6XL
+function extractSizeWiseQuantities(matrix, headerCols) {
+  const sizeWiseDetails = [];
+  
+  if (!matrix || matrix.length === 0) {
+    console.log("No matrix data");
+    return sizeWiseDetails;
+  }
+
+  console.log("Matrix rows:", matrix.length);
+  
+  // Find the row that contains size headers - look for row with "Color" or multiple size values
+  let headerRowIndex = -1;
+  let sizeColumns = [];
+  
+  // Common patterns for size columns (excluding known non-size columns)
+  const nonSizeColumns = ['COLOR', 'COLOUR', 'CUTTING TABLE', 'TOTAL PCS', 'TOTAL', 
+                          'PARTICULARS', 'S.NO', 'SR.NO', 'DESCRIPTION', 'STYLE', 
+                          'FABRIC', 'GARMENT TYPE', 'LOT NUMBER', 'LOT NUMBER:'];
+  
+  // Comprehensive size pattern that matches ALL sizes up to 6XL:
+  // - Letter sizes: S, M, L, XL, XXL, XXXL, XXXXL, XXXXXL, XXXXXXL
+  // - Number-letter combos: 2XL, 3XL, 4XL, 5XL, 6XL
+  // - Number sizes: 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44
+  // - Teen/Children sizes: 8, 10, 12, 14, 16
+  const sizePattern = /^(\d*X*L?|X{1,6}L?|\d{2,3}|\d{1,2}[X]?L?)$/i;
+  
+  // Explicit pattern for common size formats
+  const explicitSizePattern = /^(?:S|M|L|XL|XXL|XXXL|XXXXL|XXXXXL|XXXXXXL|2XL|3XL|4XL|5XL|6XL|XS|XXS|XXXS|SML|MED|LRG|XLG|\d{1,2}|\d{2,3})$/i;
+  
+  for (let i = 0; i < matrix.length; i++) {
+    const row = matrix[i];
+    if (!row || row.length === 0) continue;
+    
+    // Check if this row has multiple potential size columns
+    let sizeCount = 0;
+    let hasColorColumn = false;
+    
+    for (let j = 0; j < row.length; j++) {
+      const cell = row[j] ? row[j].toString().trim().toUpperCase() : "";
+      
+      // Check if this row has a "COLOR" or "COLOUR" column (indicates this is the header row)
+      if (cell === "COLOR" || cell === "COLOUR") {
+        hasColorColumn = true;
+      }
+      
+      // Skip known non-size columns
+      if (nonSizeColumns.includes(cell)) {
+        continue;
+      }
+      
+      // Clean the cell value for size detection
+      let cleanCell = cell.replace(/[^\w]/g, ''); // Remove special characters
+      
+      // Check if it's a valid size
+      const isValidSize = (explicitSizePattern.test(cleanCell) || sizePattern.test(cleanCell)) && 
+                          cleanCell !== row[0]?.toString().trim().toUpperCase() && // Don't consider first column as size
+                          cleanCell.length <= 8 && // Size strings up to "XXXXXXL" is 7 chars
+                          !cleanCell.includes(':') && // Not a label with colon
+                          (isNaN(parseFloat(cleanCell)) || cleanCell.length >= 2); // Allow numbers but ensure they're not single digits (unless they're sizes)
+      
+      if (isValidSize) {
+        sizeCount++;
+      }
+    }
+    
+    // If we found a row with "COLOR" and multiple size columns, this is our header row
+    if (hasColorColumn && sizeCount >= 2) {
+      headerRowIndex = i;
+      console.log(`Found size header row at index ${i}:`, row);
+      break;
+    }
+  }
+  
+  // If we didn't find the header row with "COLOR", look for row with most size values
+  if (headerRowIndex === -1) {
+    let maxSizeCount = 0;
+    for (let i = 0; i < matrix.length; i++) {
+      const row = matrix[i];
+      if (!row || row.length === 0) continue;
+      
+      let sizeCount = 0;
+      for (let j = 1; j < row.length; j++) {
+        const cell = row[j] ? row[j].toString().trim().toUpperCase() : "";
+        let cleanCell = cell.replace(/[^\w]/g, '');
+        
+        if ((explicitSizePattern.test(cleanCell) || sizePattern.test(cleanCell)) && 
+            cleanCell.length <= 8 && !cleanCell.includes(':')) {
+          sizeCount++;
+        }
+      }
+      
+      if (sizeCount > maxSizeCount) {
+        maxSizeCount = sizeCount;
+        headerRowIndex = i;
+      }
+    }
+    console.log(`Found potential header row at index ${headerRowIndex} with ${maxSizeCount} size columns`);
+  }
+  
+  if (headerRowIndex === -1) {
+    console.log("No size headers found");
+    return sizeWiseDetails;
+  }
+  
+  // Get the size header row
+  const headerRow = matrix[headerRowIndex];
+  console.log("Size header row:", headerRow);
+  
+  // Normalize size strings for consistent comparison
+  const normalizeSize = (size) => {
+    let normalized = size.toUpperCase();
+    // Convert 2XL, 3XL, 4XL, 5XL, 6XL to standard format
+    normalized = normalized.replace(/^(\d+)XL$/, (match, num) => {
+      const xCount = parseInt(num);
+      return 'X'.repeat(xCount) + 'L';
+    });
+    return normalized;
+  };
+  
+  // Find all columns that contain size values
+  for (let i = 0; i < headerRow.length; i++) {
+    let cell = headerRow[i] ? headerRow[i].toString().trim().toUpperCase() : "";
+    let cleanCell = cell.replace(/[^\w]/g, '');
+    
+    // Skip known non-size columns
+    if (nonSizeColumns.includes(cell) || nonSizeColumns.includes(cleanCell) || 
+        cell === "COLOR" || cell === "COLOUR" || cell === "CUTTING TABLE") {
+      continue;
+    }
+    
+    // Skip empty cells
+    if (!cleanCell) continue;
+    
+    // Check if it's a valid size
+    if ((explicitSizePattern.test(cleanCell) || sizePattern.test(cleanCell)) &&
+        cleanCell.length <= 8 && !cleanCell.includes(':')) {
+      
+      // Record the size with its normalized form for display
+      sizeColumns.push({ 
+        index: i, 
+        name: cell,
+        normalized: normalizeSize(cell)
+      });
+    }
+  }
+  
+  console.log("Found size columns:", sizeColumns.map(c => c.name));
+  
+  if (sizeColumns.length === 0) {
+    console.log("No size columns detected");
+    return sizeWiseDetails;
+  }
+  
+  // Initialize quantity map for each size
+  const quantityMap = new Map();
+  sizeColumns.forEach(col => {
+    quantityMap.set(col.name, 0);
+  });
+  
+  // Process data rows (rows after header row)
+  for (let i = headerRowIndex + 1; i < matrix.length; i++) {
+    const row = matrix[i];
+    if (!row || row.length === 0) continue;
+    
+    // Get the first column value (Color name or description)
+    const firstColValue = row[0] ? row[0].toString().toLowerCase() : "";
+    
+    // Skip total rows and empty rows
+    if (firstColValue === 'total' || firstColValue.includes('total') || firstColValue === '') {
+      console.log(`Skipping row ${i} (${firstColValue || 'empty'})`);
+      continue;
+    }
+    
+    // Skip rows that don't have enough columns
+    if (row.length < sizeColumns[sizeColumns.length - 1].index + 1) {
+      continue;
+    }
+    
+    console.log(`Processing row ${i}: ${firstColValue}`);
+    
+    // Process each size column for this row
+    for (const col of sizeColumns) {
+      if (col.index < row.length) {
+        let value = row[col.index];
+        
+        // Convert to number
+        let numericValue = 0;
+        if (typeof value === 'number') {
+          numericValue = value;
+        } else if (typeof value === 'string') {
+          value = value.trim();
+          if (value === '' || value === '-') {
+            numericValue = 0;
+          } else {
+            numericValue = parseInt(value);
+            if (isNaN(numericValue)) numericValue = 0;
+          }
+        }
+        
+        if (numericValue > 0) {
+          const current = quantityMap.get(col.name) || 0;
+          quantityMap.set(col.name, current + numericValue);
+          console.log(`  Added ${numericValue} to ${col.name} (now: ${current + numericValue})`);
+        }
+      }
+    }
+  }
+  
+  // Convert map to array and filter out zero quantities
+  for (const [size, quantity] of quantityMap) {
+    if (quantity > 0) {
+      sizeWiseDetails.push({ size, quantity });
+    }
+  }
+  
+  // Sort sizes with proper order for sizes up to 6XL
+  const getSizeOrder = (size) => {
+    const upperSize = size.toUpperCase();
+    
+    // Handle numeric sizes
+    const numSize = parseInt(upperSize);
+    if (!isNaN(numSize) && numSize >= 20) {
+      return numSize; // Numeric sizes (24, 26, 28, etc.)
+    }
+    
+    // Handle number+XL format (2XL, 3XL, 4XL, 5XL, 6XL)
+    const xlMatch = upperSize.match(/^(\d+)XL$/);
+    if (xlMatch) {
+      const num = parseInt(xlMatch[1]);
+      return 10 + num; // 2XL=12, 3XL=13, 4XL=14, 5XL=15, 6XL=16
+    }
+    
+    // Handle X repeats format (XXL, XXXL, XXXXL, XXXXXL, XXXXXXL)
+    const xRepeatMatch = upperSize.match(/^(X{2,})L$/);
+    if (xRepeatMatch) {
+      const xCount = xRepeatMatch[1].length;
+      return 10 + xCount; // XXL=12, XXXL=13, XXXXL=14, XXXXXL=15, XXXXXXL=16
+    }
+    
+    // Standard letter sizes order
+    const order = {
+      'XXS': 1, 'XS': 2, 'S': 3, 'SML': 3, 'MED': 4, 'M': 4,
+      'L': 5, 'LRG': 5, 'XL': 6, 'XLG': 6, 'XXL': 12, 'XXXL': 13,
+      'XXXXL': 14, 'XXXXXL': 15, 'XXXXXXL': 16
+    };
+    
+    return order[upperSize] || 99;
+  };
+  
+  sizeWiseDetails.sort((a, b) => {
+    const orderA = getSizeOrder(a.size);
+    const orderB = getSizeOrder(b.size);
+    return orderA - orderB;
+  });
+  
+  console.log("Final aggregated size-wise details:", sizeWiseDetails);
+  
+  // Calculate total for verification
+  const total = sizeWiseDetails.reduce((sum, item) => sum + item.quantity, 0);
+  console.log(`Total quantity from size breakdown: ${total}`);
+  
+  return sizeWiseDetails;
+}
+
+// Fetch specific lot data using index - INCLUDING SIZE DETAILS
+// Fetch specific lot data using index - INCLUDING SIZE DETAILS
+// Fetch specific lot data using index - INCLUDING SIZE DETAILS
+// Fetch specific lot data using index - INCLUDING SIZE DETAILS
 async function fetchLotData(sheetId, lotNumber, apiKey) {
   try {
     const { indexMap } = await fetchLotIndex(sheetId, apiKey);
@@ -137,8 +407,14 @@ async function fetchLotData(sheetId, lotNumber, apiKey) {
       throw new Error(`Lot number ${lotNumber} not found in index`);
     }
 
-    const endRow = lotInfo.startRow + lotInfo.numRows - 1;
-    const range = `Cutting!A${lotInfo.startRow}:Z${endRow}`;
+    // Calculate the exact range
+    const startRow = lotInfo.startRow;
+    const numRows = lotInfo.numRows;
+    const endRow = startRow + numRows - 1;
+    const range = `Cutting!A${startRow}:Z${endRow}`;
+    
+    console.log(`Fetching lot data from range: ${range}`);
+    console.log(`Start row: ${startRow}, End row: ${endRow}, Total rows: ${numRows}`);
     
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(
       range
@@ -148,10 +424,22 @@ async function fetchLotData(sheetId, lotNumber, apiKey) {
     const data = await resp.json();
     const values = data.values || [];
     
+    console.log(`Fetched ${values.length} rows for lot ${lotNumber}`);
+    
+    // Log all rows for debugging
+    values.forEach((row, idx) => {
+      console.log(`Row ${idx}:`, row);
+    });
+    
+    // Extract size-wise quantities from the matrix
+    const sizeWiseDetails = extractSizeWiseQuantities(values, lotInfo.headerCols);
+    
     return {
       lotNumber,
       matrix: values,
-      headerCols: lotInfo.headerCols
+      headerCols: lotInfo.headerCols,
+      sizeWiseDetails: sizeWiseDetails,
+      sizesInfo: lotInfo.sizes
     };
   } catch (error) {
     console.error('Error fetching lot data:', error);
@@ -159,7 +447,7 @@ async function fetchLotData(sheetId, lotNumber, apiKey) {
   }
 }
 
-// Simplified function to get only total quantity from lot
+// Get total quantity from lot
 function getLotTotalQuantity(lotData) {
   if (!lotData || !lotData.matrix || lotData.matrix.length === 0) {
     return 0;
@@ -168,7 +456,6 @@ function getLotTotalQuantity(lotData) {
   const matrix = lotData.matrix;
   const headerCols = lotData.headerCols || 7;
 
-  // Find the total row (usually the last row or contains "Total")
   const totalRow = matrix.find(row => 
     row[0] && (String(row[0]).toLowerCase().includes('total') || String(row[0]) === 'Total')
   );
@@ -177,7 +464,6 @@ function getLotTotalQuantity(lotData) {
     return parseFloat(totalRow[headerCols - 1]) || 0;
   }
 
-  // If no total row found, return 0
   return 0;
 }
 
@@ -202,13 +488,12 @@ const saveSupervisors = (supervisors) => {
   }
 };
 
-// Optimized CSS Styles - Moved outside component to prevent re-renders
 const styles = {
   container: {
     minHeight: "100vh",
     background: "linear-gradient(135deg, #ffffffff 0%, #ffffffff 100%)",
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-    padding: "20px",
+    padding: "10px",
   },
   card: {
     background: "rgba(255, 255, 255, 0.95)",
@@ -217,28 +502,28 @@ const styles = {
     border: "1px solid rgba(255, 255, 255, 0.2)",
     boxShadow: "0 20px 40px rgba(0, 0, 0, 0.1)",
     overflow: "hidden",
-    maxWidth: "1800px",
+    maxWidth: "2100px",
     margin: "0 auto",
   },
   header: {
-    background: "linear-gradient(135deg, #667eea 0%, #0003beff 100%)",
+    background: "linear-gradient(135deg, #001b96 0%, #0003beff 100%)",
     padding: "40px 30px 30px",
     color: "white",
     textAlign: "center",
     position: "relative",
   },
   title: {
-    fontSize: "2.5rem",
-    fontWeight: "700",
+    fontSize: "3.5rem",
+    fontWeight: "900",
     margin: "0 0 10px 0",
     background: "linear-gradient(45deg, #fff, #e2e8f0)",
     WebkitBackgroundClip: "text",
     WebkitTextFillColor: "transparent",
   },
   subtitle: {
-    fontSize: "1.1rem",
+    fontSize: "1.8rem",
     opacity: "0.9",
-    fontWeight: "300",
+    fontWeight: "500",
   },
   tabs: {
     display: "flex",
@@ -290,7 +575,7 @@ const styles = {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
     gap: "20px",
-    marginBottom: "20px",
+    marginBottom: "50px",
   },
   field: {
     display: "flex",
@@ -298,7 +583,7 @@ const styles = {
     gap: "8px",
   },
   label: {
-    fontSize: "14px",
+    fontSize: "18px",
     fontWeight: "600",
     color: "#00368dff",
     display: "flex",
@@ -459,7 +744,6 @@ const styles = {
 };
 
 export default function MaterialStitchingOrder({ fallbackPath = "/" }) {
-  /** ------- STATE ------- */
   const [formData, setFormData] = useState({
     orderNo: "",
     lotNo: "",
@@ -484,6 +768,7 @@ export default function MaterialStitchingOrder({ fallbackPath = "/" }) {
   const [supervisors, setSupervisors] = useState([]);
   const [existingOrders, setExistingOrders] = useState(new Map());
   const [currentLotQuantity, setCurrentLotQuantity] = useState(0);
+  const [sizeWiseDetails, setSizeWiseDetails] = useState([]);
 
   const [uiState, setUiState] = useState({
     loading: false,
@@ -507,19 +792,16 @@ export default function MaterialStitchingOrder({ fallbackPath = "/" }) {
     supervisor: ""
   });
 
-  /** ------- EFFECTS ------- */
   useEffect(() => {
     generateOrderNo();
     loadSupervisors();
     loadExistingMSOData();
   }, []);
 
-  /** ------- BACK BUTTON HANDLER ------- */
   const handleBack = () => {
     window.history.back();
   };
 
-  /** ------- EXISTING MSO DATA MANAGEMENT ------- */
   const loadExistingMSOData = async () => {
     updateUiState("loadingExistingData", true);
     try {
@@ -532,33 +814,27 @@ export default function MaterialStitchingOrder({ fallbackPath = "/" }) {
     }
   };
 
-  /** ------- Pending Quantity Validation ------- */
-const checkForExistingOrder = (lotNumber, currentTotalQuantity) => {
-  const normalizedLot = lotNumber.trim().toLowerCase();
-  const existingOrder = existingOrders.get(normalizedLot);
-  
-  if (!existingOrder) return null;
-  
-  const totalIssuedQty = existingOrder.totalIssuedQuantity;
-  const totalQty = parseInt(currentTotalQuantity) || 0;
-  
-  // Calculate pending quantity (total - all issued quantities)
-  const pendingQty = Math.max(0, totalQty - totalIssuedQty);
-  
-  return {
-    exists: true,
-    order: existingOrder,
-    totalIssuedQty, // Sum of all issued quantities
-    totalQty, // This is the total from cutting sheet
-    pendingQty, // This is what's available for new MSO
-    canCreateNew: pendingQty > 0,
-    msoCount: existingOrder.msoNumbers.length // Number of MSOs for this lot
+  const checkForExistingOrder = (lotNumber, currentTotalQuantity) => {
+    const normalizedLot = lotNumber.trim().toLowerCase();
+    const existingOrder = existingOrders.get(normalizedLot);
+    
+    if (!existingOrder) return null;
+    
+    const totalIssuedQty = existingOrder.totalIssuedQuantity;
+    const totalQty = parseInt(currentTotalQuantity) || 0;
+    const pendingQty = Math.max(0, totalQty - totalIssuedQty);
+    
+    return {
+      exists: true,
+      order: existingOrder,
+      totalIssuedQty,
+      totalQty,
+      pendingQty,
+      canCreateNew: pendingQty > 0,
+      msoCount: existingOrder.msoNumbers.length
+    };
   };
-};
 
-
-
-  /** ------- SUPERVISOR MANAGEMENT ------- */
   const loadSupervisors = async () => {
     updateUiState("loadingSupervisors", true);
     try {
@@ -575,7 +851,6 @@ const checkForExistingOrder = (lotNumber, currentTotalQuantity) => {
     }
   };
 
-  /** ------- UTILITIES ------- */
   const generateOrderNo = () => {
     const d = new Date();
     const y = d.getFullYear();
@@ -596,7 +871,6 @@ const checkForExistingOrder = (lotNumber, currentTotalQuantity) => {
     setUiState(prev => ({ ...prev, [field]: value }));
   };
 
-  /** ------- DATA FETCHING ------- */
   const fetchLotDataFromIndex = async (lotNumber) => {
     try {
       const { indexMap, supervisors: sheetSupervisors } = await fetchLotIndex(SHEET_ID, API_KEY);
@@ -631,6 +905,9 @@ const checkForExistingOrder = (lotNumber, currentTotalQuantity) => {
       const lotData = await fetchLotData(CUTTING_SHEET_ID, lotNumber, API_KEY);
       const totalQuantity = getLotTotalQuantity(lotData);
       setCurrentLotQuantity(totalQuantity);
+      // Store size-wise details in state
+      setSizeWiseDetails(lotData.sizeWiseDetails || []);
+      console.log("Size-wise details set:", lotData.sizeWiseDetails);
       return totalQuantity;
     } catch (error) {
       console.error('Error fetching lot quantity:', error);
@@ -638,102 +915,90 @@ const checkForExistingOrder = (lotNumber, currentTotalQuantity) => {
     }
   };
 
-  /** ------- Handle Lot Lookup ------- */
-const handleLotLookup = async () => {
-  if (!formData.lotNo.trim()) {
-    setErrors(prev => ({ ...prev, lotNo: "Please enter Lot Number" }));
-    return;
-  }
+  const handleLotLookup = async () => {
+    if (!formData.lotNo.trim()) {
+      setErrors(prev => ({ ...prev, lotNo: "Please enter Lot Number" }));
+      return;
+    }
 
-  updateUiState("loadingLookup", true);
-  setErrors(prev => ({ 
-    ...prev, 
-    lotNo: "", 
-    brand: "", 
-    garmentType: "", 
-    supervisor: "", 
-    qty: "" 
-  }));
+    updateUiState("loadingLookup", true);
+    setErrors(prev => ({ 
+      ...prev, 
+      lotNo: "", 
+      brand: "", 
+      garmentType: "", 
+      supervisor: "", 
+      qty: "" 
+    }));
 
-  // Clear previous data
-  updateFormData("brand", "");
-  updateFormData("garmentType", "");
-  updateFormData("qty", "");
-  updateFormData("supervisor", "");
+    updateFormData("brand", "");
+    updateFormData("garmentType", "");
+    updateFormData("qty", "");
+    updateFormData("supervisor", "");
 
-  try {
-    // Get all data from index sheet (brand, garment type, supervisor)
-    const basicInfo = await fetchLotDataFromIndex(formData.lotNo.trim());
-    
-    // Get only quantity from cutting sheet
-    updateUiState("loadingLotQty", true);
-    const totalLotQuantity = await fetchLotQuantity(formData.lotNo.trim());
-    
-    // Check for existing orders and calculate available quantity
-    const existingCheck = checkForExistingOrder(formData.lotNo.trim(), totalLotQuantity.toString());
-    
-    let availableQuantity = totalLotQuantity;
-    let quantityMessage = "";
-    let canProceed = true;
-    
-    if (existingCheck && existingCheck.exists) {
-      // Calculate pending quantity (total - all issued quantities)
-      availableQuantity = existingCheck.pendingQty;
+    try {
+      const basicInfo = await fetchLotDataFromIndex(formData.lotNo.trim());
       
-      if (existingCheck.pendingQty <= 0) {
-        // No pending quantity available - BLOCK creation
-        canProceed = false;
-        setErrors(prev => ({ 
-          ...prev, 
-          lotNo: `❌ ${existingCheck.msoCount} MSO(s) already exist. No pending quantity available. Total: ${totalLotQuantity} PCS, Already issued: ${existingCheck.totalIssuedQty} PCS`,
-          qty: "🚫 Cannot create MSO - no pending quantity available"
+      updateUiState("loadingLotQty", true);
+      const totalLotQuantity = await fetchLotQuantity(formData.lotNo.trim());
+      
+      const existingCheck = checkForExistingOrder(formData.lotNo.trim(), totalLotQuantity.toString());
+      
+      let availableQuantity = totalLotQuantity;
+      let quantityMessage = "";
+      let canProceed = true;
+      
+      if (existingCheck && existingCheck.exists) {
+        availableQuantity = existingCheck.pendingQty;
+        
+        if (existingCheck.pendingQty <= 0) {
+          canProceed = false;
+          setErrors(prev => ({ 
+            ...prev, 
+            lotNo: `❌ ${existingCheck.msoCount} MSO(s) already exist. No pending quantity available. Total: ${totalLotQuantity} PCS, Already issued: ${existingCheck.totalIssuedQty} PCS`,
+            qty: "🚫 Cannot create MSO - no pending quantity available"
+          }));
+        } else {
+          quantityMessage = `✅ Pending quantity available: ${existingCheck.pendingQty} PCS (Total: ${totalLotQuantity} PCS, Issued: ${existingCheck.totalIssuedQty} PCS across ${existingCheck.msoCount} MSO(s))`;
+          availableQuantity = existingCheck.pendingQty;
+        }
+      }
+
+      if (canProceed) {
+        setFormData(prev => ({
+          ...prev,
+          brand: basicInfo.brand,
+          garmentType: basicInfo.garmentType,
+          qty: availableQuantity.toString(),
+          supervisor: basicInfo.supervisor
         }));
-      } else {
-        // Pending quantity available
-        quantityMessage = `✅ Pending quantity available: ${existingCheck.pendingQty} PCS (Total: ${totalLotQuantity} PCS, Issued: ${existingCheck.totalIssuedQty} PCS across ${existingCheck.msoCount} MSO(s))`;
-        availableQuantity = existingCheck.pendingQty; // Set to pending quantity
+
+        if (quantityMessage) {
+          setErrors(prev => ({ ...prev, lotNo: quantityMessage }));
+        }
       }
+
+      if (canProceed) {
+        const newErrors = {};
+        if (!basicInfo.supervisor) {
+          newErrors.supervisor = "Supervisor not found for this lot";
+        }
+        if (availableQuantity === 0) {
+          newErrors.qty = "No available quantity for this lot";
+        }
+        if (Object.keys(newErrors).length > 0) {
+          setErrors(prev => ({ ...prev, ...newErrors }));
+        }
+      }
+
+    } catch (error) {
+      setErrors(prev => ({ ...prev, lotNo: error.message }));
+    } finally {
+      updateUiState("loadingLookup", false);
+      updateUiState("loadingLotQty", false);
     }
+  };
 
-    // Only update form if we can proceed
-    if (canProceed) {
-      setFormData(prev => ({
-        ...prev,
-        brand: basicInfo.brand,
-        garmentType: basicInfo.garmentType,
-        qty: availableQuantity.toString(), // This will be pending quantity if exists
-        supervisor: basicInfo.supervisor
-      }));
-
-      // Set quantity info message
-      if (quantityMessage) {
-        setErrors(prev => ({ ...prev, lotNo: quantityMessage }));
-      }
-    }
-
-    // Set errors if any required fields are missing (only if proceeding)
-    if (canProceed) {
-      const newErrors = {};
-      if (!basicInfo.supervisor) {
-        newErrors.supervisor = "Supervisor not found for this lot";
-      }
-      if (availableQuantity === 0) {
-        newErrors.qty = "No available quantity for this lot";
-      }
-      if (Object.keys(newErrors).length > 0) {
-        setErrors(prev => ({ ...prev, ...newErrors }));
-      }
-    }
-
-  } catch (error) {
-    setErrors(prev => ({ ...prev, lotNo: error.message }));
-  } finally {
-    updateUiState("loadingLookup", false);
-    updateUiState("loadingLotQty", false);
-  }
-};
-
-  /** ------- Validation ------- */
   const validateForm = () => {
     const newErrors = {};
     
@@ -759,7 +1024,6 @@ const handleLotLookup = async () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  /** ------- Submit Handler ------- */
   const handleSubmit = async () => {
     const existingCheck = checkForExistingOrder(formData.lotNo, currentLotQuantity);
     
@@ -777,20 +1041,12 @@ const handleLotLookup = async () => {
 
     if (!validateForm()) return;
 
-    if (existingCheck && !existingCheck.quantitiesMatch) {
-      updateUiState("showDuplicateWarning", true);
-      updateUiState("dialogMessage", 
-        `⚠️ An MSO already exists for this lot with different quantity.\n\nAre you sure you want to create a new MSO?`
-      );
-    } else {
-      updateUiState("showSubmitDialog", true);
-    }
+    updateUiState("showSubmitDialog", true);
   };
 
   const confirmSubmit = async () => {
     updateUiState("loading", true);
     updateUiState("showSubmitDialog", false);
-    updateUiState("showDuplicateWarning", false);
 
     const accessoryMap = {
       label: "LABEL",
@@ -818,7 +1074,10 @@ const handleLotLookup = async () => {
       remarks: formData.remarks,
       supervisor: formData.supervisor,
       createdAt: new Date().toISOString(),
+      sizeWiseDetails: sizeWiseDetails
     };
+
+    console.log("Submitting with size details:", sizeWiseDetails);
 
     try {
       const response = await fetch(WEB_APP_URL, {
@@ -855,191 +1114,149 @@ const handleLotLookup = async () => {
     }
   };
 
-  const proceedWithDifferentQuantity = () => {
-    updateUiState("showDuplicateWarning", false);
-    updateUiState("showSubmitDialog", true);
-  };
-
  const generatePDF = (data) => {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const W = doc.internal.pageSize.getWidth();
-  const H = doc.internal.pageSize.getHeight();
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
 
-  // helpers
-  const M = 36;
-  const BORDER_INSET = 14;
-  const line = (x1, y1, x2, y2, w = 1) => {
-    doc.setLineWidth(w);
-    doc.line(x1, y1, x2, y2);
-  };
-  const rect = (x, y, w, h, wid = 1) => {
-    doc.setLineWidth(wid);
-    doc.rect(x, y, w, h);
-  };
-  const drawCheck = (x, y) => {
-    doc.setLineWidth(2);
-    line(x - 8, y + 2, x - 3, y + 8);
-    line(x - 3, y + 8, x + 10, y - 6);
-    doc.setLineWidth(1);
-  };
-  const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const M = 36;
+    const BORDER_INSET = 14;
+    
+    // Helper functions
+    const line = (x1, y1, x2, y2, w = 1) => {
+        doc.setLineWidth(w);
+        doc.line(x1, y1, x2, y2);
+    };
+    const rect = (x, y, w, h, wid = 1) => {
+        doc.setLineWidth(wid);
+        doc.rect(x, y, w, h);
+    };
 
-  // page border
-  rect(BORDER_INSET, BORDER_INSET, W - 2 * BORDER_INSET, H - 2 * BORDER_INSET, 1.2);
+    // Main Outer Border
+    rect(BORDER_INSET, BORDER_INSET, W - 2 * BORDER_INSET, H - 2 * BORDER_INSET, 1.2);
 
-  // header
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("PO No.STM", M, M + 2);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text("STITCHING MATERIAL ISSUE ORDER", W / 2, M + 16, { align: "center" });
-
-  // left meta
-  const leftX = M;
-  let y = M + 56;
-  const rowGap = 26,
-    labelW = 74,
-    valueW = 140;
-
-  const drawField = (label, value = "") => {
-    doc.setFont("helvetica", "bold");
+    // Header
+    doc.setFont("times", "bold");
     doc.setFontSize(10);
-    doc.text(label, leftX, y);
-    const lx1 = leftX + labelW,
-      lx2 = leftX + labelW + valueW,
-      underlineY = y + 3;
-    line(lx1, underlineY, lx2, underlineY, 0.9);
-    if (value) {
-      doc.setFont("helvetica", "normal");
-      doc.text(String(value), lx1 + 4, y);
-    }
-    y += rowGap;
-  };
+    doc.text("P NO STM", M, M + 5);
+    doc.setFontSize(18);
+    doc.text("STITCHING MATERIAL ISSUE ORDER", W / 2, M + 15, { align: "center" });
 
-  const dateVal = data.createdAt ? new Date(data.createdAt) : new Date();
-  const dateStr = new Intl.DateTimeFormat("en-GB").format(dateVal); // dd/mm/yyyy
-  const qtyStr = [data.quantity || "", data.unit || ""].join(" ").trim();
+    // Left Input Fields
+    const leftX = M;
+    let y = M + 50;
+    const rowGap = 24, labelW = 70, valueW = 130;
 
-  drawField("Date:", dateStr);
-  drawField("Lot No.:", data.lotNo || "");
-  drawField("Item.:", (data.garmentType || "").toString().toUpperCase());
-  drawField("Qty.:", qtyStr);
-  drawField("Brand", data.brand || "");
-  drawField("HEAD", data.supervisor || "");
+    const drawField = (label, value = "") => {
+        doc.setFont("times", "bold");
+        doc.setFontSize(10);
+        doc.text(label, leftX, y);
+        const lx1 = leftX + labelW, lx2 = leftX + labelW + valueW, underlineY = y + 2;
+        line(lx1, underlineY, lx2, underlineY, 0.8);
+        if (value) {
+            doc.setFont("times", "normal");
+            doc.text(String(value), lx1 + 5, y);
+        }
+        y += rowGap;
+    };
 
-  // right accessory tiles
-  const picked = (data.accessories || []).map(norm);
-  const pickSet = new Set(picked);
+    const dateStr = data.createdAt ? new Intl.DateTimeFormat("en-GB").format(new Date(data.createdAt)) : "";
+    
+    drawField("Date:", dateStr);
+    drawField("Lot No:", data.lotNo || "");
+    drawField("Item:", (data.garmentType || "").toUpperCase());
+    drawField("Qty:", data.quantity || "");
+    drawField("Brand:", data.brand || "");
+    drawField("Head:", data.supervisor || "");
 
-  // === Layout metrics ===
-  const Tx = W - M - 260; // starting X
-  const Ty = M + 50;      // starting Y
-  const Tw = 125;         // box width
-  const Th = 72;          // box height
-  const Gx = 25;          // horizontal gap
-  const Gy = 25;          // vertical gap
+    // --- INCREASED Accessory Boxes (Label, Silicon, Washcare) ---
+    // Increased width from 100 to 140
+    const boxW = 140, boxH = 45, boxGap = 15;
+    const rightBoxStartX = W - M - (boxW * 2 + boxGap);
+    const boxY = M + 45;
 
-  // === Clean tile drawing (white background, no tick) ===
-  const tile = (label, i, j) => {
-    const x = Tx + i * (Tw + Gx);
-    const yy = Ty + j * (Th + Gy);
-
-    // Draw white background
-    doc.setFillColor(255, 255, 255); // white fill
-    doc.rect(x, yy, Tw, Th, "FD");   // filled + border rectangle
-
-    // Text styling
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(17);
-    doc.text(label, x + Tw / 2, yy + Th / 2 + 5, { align: "center" });
-  };
-
-  // === Layout ===
-  // Row 1: Two boxes side by side
-  tile("LABEL", 0, 0);
-  tile("SILICON", 1, 0);
-
-  // Row 2: Single box centered below both
-  const centerOffsetX = (Tw + Gx) / 2;
-  const centerX = Tx + centerOffsetX;
-  const centerY = Ty + (Th + Gy); // one row down
-
-  doc.setFillColor(255, 255, 255);
-  rect(centerX, centerY, Tw, Th, 1.5);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(17);
-  doc.text("WASH CARE", centerX + Tw / 2, centerY + Th / 2 + 5, { align: "center" });
-
-  // table
-  const tableTop = y + 12;
-  const c1 = 60; // Sr. No.
-  const c2 = 120; // Item Name
-  const cSel = 70; // Selected (tick)
-  const c3 = 100; // Date of Given
-  const c4 = 90; // Qty Recd.
-  const c5 = 90; // Receiver Sign
-  const cols = [c1, c2, cSel, c3, c4, c5];
-  const tableW = cols.reduce((a, b) => a + b, 0);
-  const X = M;
-
-  const headerH = 28;
-  rect(X, tableTop, tableW, headerH, 1.2);
-  const headTexts = [
-    "Sr. No.",
-    "ITEM NAME",
-    "SELECTED",
-    "DATE OF GIVEN",
-    "QTY RECD.",
-    "RECIEVER SIGN",
-  ];
-  let cx = X;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  headTexts.forEach((t, i) => {
-    if (i > 0) line(cx, tableTop, cx, tableTop + headerH, 1.2);
-    doc.text(t, cx + 8, tableTop + 18);
-    cx += cols[i];
-  });
-
-  const base = ["LABEL", "WASH CARE", "SILICON", "SIZE", "ZIP", "TAPE/LACE"];
-  const rows = pickSet.has(norm("ELASTIC")) ? [...base, "ELASTIC"] : base;
-  let by = tableTop + headerH,
-    rowH = 70;
-  rows.forEach((name, i) => {
-    rect(X, by, tableW, rowH, 1.0);
-    let vx = X;
-    cols.forEach((w, k) => {
-      if (k > 0) line(vx, by, vx, by + rowH, 1.0);
-      vx += w;
-    });
-    doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text(String(i + 1), X + 8, by + 24);
-    doc.text(name, X + c1 + 8, by + 24);
-    if (pickSet.has(norm(name))) {
-      const selCenterX = X + c1 + c2 + cSel / 2;
-      const selCenterY = by + rowH / 2;
-      drawCheck(selCenterX, selCenterY);
+    // Label
+    rect(rightBoxStartX, boxY, boxW, boxH, 1.2);
+    doc.text("Label", rightBoxStartX + boxW / 2, boxY + 28, { align: "center" });
+    
+    // Silicon
+    rect(rightBoxStartX + boxW + boxGap, boxY, boxW, boxH, 1.2);
+    doc.text("Silicon", rightBoxStartX + boxW + boxGap + boxW / 2, boxY + 28, { align: "center" });
+
+    // Washcare (Centered below the two)
+    const washY = boxY + boxH + boxGap;
+    rect(rightBoxStartX + (boxW / 2), washY, boxW * 1.5, boxH, 1.2);
+    doc.text("Washcare", rightBoxStartX + (boxW / 2) + (boxW * 1.5) / 2, washY + 28, { align: "center" });
+
+    // --- TABLES SECTION ---
+    const tableTop = y + 10;
+    
+    // 1. Main Material Table (Left)
+    const c1 = 35, c2 = 110, cSel = 55, c3 = 85, c4 = 60, c5 = 65;
+    const leftCols = [c1, c2, cSel, c3, c4, c5];
+    const leftTableW = leftCols.reduce((a, b) => a + b, 0);
+    const mainRows = ["LABEL", "WASH CARE", "SILICON", "SIZE", "ZIP", "TAPE/LACE"];
+    const rowH = 65; 
+    const headerH = 25;
+
+    doc.setFontSize(9);
+    let cx = M;
+    const headTexts = ["S.No", "ITEM NAME", "SELECTED", "DATE GVN", "QTY REC", "SIGN"];
+    rect(M, tableTop, leftTableW, headerH, 1.2);
+    headTexts.forEach((t, i) => {
+        doc.text(t, cx + 5, tableTop + 16);
+        cx += leftCols[i];
+        if (i < headTexts.length - 1) line(cx, tableTop, cx, tableTop + headerH + (mainRows.length * rowH));
+    });
+
+    mainRows.forEach((name, i) => {
+        const ry = tableTop + headerH + (i * rowH);
+        rect(M, ry, leftTableW, rowH);
+        doc.setFont("times", "bold");
+        doc.text(String(i + 1), M + 5, ry + 20);
+        doc.text(name, M + c1 + 5, ry + 20);
+    });
+
+    // 2. DECREASED Size Table (Right)
+    // Decreased column width from 60 to 45
+    const sizeTableX = M + leftTableW + 15; 
+    const sizeColW = 45; 
+    const sizeTableW = sizeColW * 2;
+    
+    doc.setFontSize(9);
+    doc.text("SIZE WISE INFO", sizeTableX, tableTop - 8);
+    
+    rect(sizeTableX, tableTop, sizeTableW, headerH, 1.2);
+    line(sizeTableX + sizeColW, tableTop, sizeTableX + sizeColW, tableTop + headerH + (8 * 25)); // Divider
+    doc.text("SIZE", sizeTableX + 5, tableTop + 16);
+    doc.text("QTY", sizeTableX + sizeColW + 5, tableTop + 16);
+
+    for (let i = 0; i < 8; i++) {
+        const sry = tableTop + headerH + (i * 25);
+        rect(sizeTableX, sry, sizeTableW, 25);
+        if (data.sizeWiseDetails && data.sizeWiseDetails[i]) {
+            doc.setFont("times", "normal");
+            doc.text(data.sizeWiseDetails[i].size, sizeTableX + 5, sry + 16);
+            doc.text(String(data.sizeWiseDetails[i].quantity), sizeTableX + sizeColW + 5, sry + 16);
+        }
     }
-    by += rowH;
-  });
 
-  // footer
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  const footer = [
-    data.orderNo ? `MSO: ${data.orderNo}` : null,
-    data.priority ? `Priority: ${data.priority}` : null,
-    data.supervisor ? `Prepared by: ${data.supervisor}` : null,
-  ]
-    .filter(Boolean)
-    .join(" • ");
-  if (footer) doc.text(footer, X, by + 22);
+    // --- FOOTER SECTION ---
+    const footerY = H - M - 20;
+    
+    // Display PO Number at bottom left
+    doc.setFont("times", "bold");
+    doc.setFontSize(11);
+    doc.text(`PO NUMBER: ${data.orderNo || "__________"}`, M, footerY - 50);
 
-  // save
-  const fname = `MSO_${(data.orderNo || "draft").toString().replace(/[^\w-]/g, "")}.pdf`;
-  doc.save(fname);
+    line(M, footerY - 10, W - M, footerY - 10, 0.8); 
+    doc.setFontSize(10);
+    doc.text("PREPARED BY", M, footerY + 10);
+    doc.text("APPROVED BY", W / 2, footerY + 10, { align: "center" });
+    doc.text("SUPPLIER'S SIGN", W - M, footerY + 10, { align: "right" });
+
+    doc.save(`MSO_${data.lotNo || "Order"}.pdf`);
 };
 
   const resetForm = () => {
@@ -1064,19 +1281,18 @@ const handleLotLookup = async () => {
     });
     setErrors({});
     setCurrentLotQuantity(0);
+    setSizeWiseDetails([]);
     generateOrderNo();
     updateUiState("activeTab", "basic");
   };
 
-  /** ------- RENDER COMPONENTS ------- */
-  
   const renderLoadingOverlay = () => (
     <div style={styles.loadingOverlay}>
       <div style={styles.loadingSpinner}></div>
     </div>
   );
 
-  const renderDialog = (title, message, actions, type = "submit") => (
+  const renderDialog = (title, message, actions) => (
     <div style={styles.dialogOverlay}>
       <div style={styles.dialog}>
         <h3 style={styles.dialogTitle}>{title}</h3>
@@ -1086,19 +1302,6 @@ const handleLotLookup = async () => {
         </div>
       </div>
     </div>
-  );
-
-  const renderDuplicateWarningDialog = () => renderDialog(
-    "⚠️ Existing MSO Found",
-    uiState.dialogMessage,
-    <>
-      <button style={{ ...styles.button, ...styles.secondaryButton }} onClick={() => updateUiState("showDuplicateWarning", false)}>
-        Cancel
-      </button>
-      <button style={{ ...styles.button, ...styles.primaryButton }} onClick={proceedWithDifferentQuantity}>
-        Create New MSO
-      </button>
-    </>
   );
 
   const renderSubmitDialog = () => renderDialog(
@@ -1130,16 +1333,13 @@ const handleLotLookup = async () => {
     </button>
   );
 
-  // Basic Information Tab
   const renderBasicInfo = () => {
     const existingCheck = checkForExistingOrder(formData.lotNo, currentLotQuantity);
     const isBlocked = existingCheck && existingCheck.pendingQty <= 0;
     
     return (
       <div style={styles.section}>
-        <h3 style={styles.sectionTitle}>
-          📋 Basic Information
-        </h3>
+        <h3 style={styles.sectionTitle}>📋 Basic Information</h3>
         
         {isBlocked && (
           <div style={{ background: "#fef3f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "15px", marginBottom: "20px" }}>
@@ -1222,6 +1422,20 @@ const handleLotLookup = async () => {
           </div>
         </div>
 
+        {sizeWiseDetails.length > 0 && (
+          <div style={{ marginTop: "20px", padding: "15px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <h4 style={{ margin: "0 0 10px 0", color: "#1e293b" }}>📊 Size-wise Breakdown</h4>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "10px" }}>
+              {sizeWiseDetails.map((item, index) => (
+                <div key={index} style={{ display: "flex", justifyContent: "space-between", padding: "8px", background: "white", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                  <span style={{ fontWeight: "600" }}>{item.size}:</span>
+                  <span>{item.quantity} PCS</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div style={styles.field}>
           <label style={styles.label}>💬 Additional Remarks</label>
           <textarea style={{ ...styles.input, minHeight: "80px" }} value={formData.remarks} onChange={(e) => updateFormData("remarks", e.target.value)} />
@@ -1230,7 +1444,6 @@ const handleLotLookup = async () => {
     );
   };
 
-  // Accessories Tab
   const renderAccessories = () => {
     const existingCheck = checkForExistingOrder(formData.lotNo, currentLotQuantity);
     const isBlocked = existingCheck && existingCheck.pendingQty <= 0;
@@ -1277,7 +1490,6 @@ const handleLotLookup = async () => {
     );
   };
 
-  // Review Tab
   const renderReview = () => {
     const existingCheck = checkForExistingOrder(formData.lotNo, currentLotQuantity);
     const isBlocked = existingCheck && existingCheck.pendingQty <= 0;
@@ -1300,6 +1512,19 @@ const handleLotLookup = async () => {
                 <div><strong>Priority:</strong> {formData.priority}</div>
               </div>
               
+              {sizeWiseDetails.length > 0 && (
+                <div style={{ marginTop: "15px" }}>
+                  <strong>Size-wise Breakdown:</strong>
+                  <div style={{ marginTop: "10px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "8px" }}>
+                    {sizeWiseDetails.map((item, index) => (
+                      <div key={index} style={{ background: "#f1f5f9", padding: "5px 10px", borderRadius: "5px" }}>
+                        {item.size}: {item.quantity} PCS
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
               <div style={{ marginTop: "15px" }}>
                 <strong>Selected Accessories:</strong>{" "}
                 {Object.entries(accessories).filter(([, value]) => value).length > 0 
@@ -1313,7 +1538,6 @@ const handleLotLookup = async () => {
     );
   };
 
-  // Navigation Buttons
   const renderNavigation = () => {
     const existingCheck = checkForExistingOrder(formData.lotNo, currentLotQuantity);
     const isBlocked = existingCheck && existingCheck.pendingQty <= 0;
@@ -1374,7 +1598,6 @@ const handleLotLookup = async () => {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        {/* Header */}
         <div style={styles.header}>
           <button style={styles.backButton} onClick={handleBack}>
             ← Back
@@ -1382,7 +1605,6 @@ const handleLotLookup = async () => {
           <h1 style={styles.title}>Material Stitching Order</h1>
           <p style={styles.subtitle}>Create and manage material stitching orders efficiently</p>
           
-          {/* Tabs */}
           <div style={styles.tabs}>
             {["basic", "accessories", "review"].map((tab) => (
               <div
@@ -1401,7 +1623,6 @@ const handleLotLookup = async () => {
           </div>
         </div>
 
-        {/* Content */}
         <div style={styles.content}>
           {uiState.activeTab === "basic" && renderBasicInfo()}
           {uiState.activeTab === "accessories" && renderAccessories()}
@@ -1410,14 +1631,10 @@ const handleLotLookup = async () => {
         </div>
       </div>
 
-      {/* Loading Overlay */}
       {(uiState.loading || uiState.loadingLookup) && renderLoadingOverlay()}
-
-      {/* Dialogs */}
       {uiState.showSubmitDialog && renderSubmitDialog()}
       {uiState.showSuccessDialog && renderSuccessDialog()}
       {uiState.showErrorDialog && renderErrorDialog()}
-      {uiState.showDuplicateWarning && renderDuplicateWarningDialog()}
     </div>
   );
 }

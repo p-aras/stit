@@ -116,6 +116,8 @@ const OLD_META_SHEET_ID = "1xD8Uy1lUgvNTQ2RGRBI4ZjOrozbinUPRq2_UfIplP98";
 const OLD_META_TAB = "RAW FINAL";
 const ISSUE_LOG_SHEET_ID = SHEET_ID;
 const ISSUE_LOG_TAB = "Index";
+const SUPERVISOR_SHEET_ID = "1iBDfsxA9XEC9nhQE-ALBYlyGRZWOaCYvWsnGfYYbr1I";
+const SUPERVISOR_TAB = "StitchingSupervisors";
 
 const MAX_RANGE = 'A1:Z';
 const DEFAULT_SUPERVISORS = ['SONU', 'SANJAY', 'MONU', 'ROHIT','VINAY'];
@@ -408,12 +410,9 @@ async function fetchSheetDataCached(sheetId, range, signal) {
   
   const cached = sheetDataCache.get(cacheKey);
   if (cached) {
-    // console.log('📦 Cache HIT for sheet data:', range);
     return cached;
   }
 
-  // console.log('🔄 Cache MISS for sheet data:', range);
-  
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${GOOGLE_API_KEY}`;
   const res = await fetch(url, { signal });
   
@@ -429,11 +428,87 @@ async function fetchSheetDataCached(sheetId, range, signal) {
   return result;
 }
 
+// ============================
+// SUPERVISOR FETCHER FROM GOOGLE SHEET
+// ============================
+async function fetchSupervisorsFromSheet(signal) {
+  const cacheKey = `supervisors_stitching_${SUPERVISOR_SHEET_ID}_${SUPERVISOR_TAB}`;
+  
+  // Check cache first (cache for 10 minutes)
+  const cached = sheetDataCache.get(cacheKey);
+  if (cached) {
+    console.log('📦 Cache HIT for supervisors list');
+    return cached;
+  }
+  
+  console.log('🔄 Fetching stitching supervisors from Google Sheet...');
+  
+  try {
+    if (!GOOGLE_API_KEY) {
+      console.warn('No API key found, using default supervisors');
+      return DEFAULT_SUPERVISORS;
+    }
+    
+    // Fetch columns A through F (ID, Username, Password, Name, Department, Shift)
+    const range = encodeURIComponent(`${SUPERVISOR_TAB}!A2:F`);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SUPERVISOR_SHEET_ID}/values/${range}?key=${GOOGLE_API_KEY}`;
+    const res = await fetch(url, { signal });
+    
+    if (!res.ok) {
+      throw new Error(`Failed to fetch supervisors: ${res.status}`);
+    }
+    
+    const data = await res.json();
+    const rows = data?.values || [];
+    
+    if (!rows.length) {
+      console.warn('No supervisor data found in sheet');
+      return DEFAULT_SUPERVISORS;
+    }
+    
+    // Column indices based on your data structure
+    // A=0: ID, B=1: Username, C=2: Password, D=3: Name, E=4: Department, F=5: Shift
+    const COL_NAME = 3;        // Name column (D)
+    const COL_DEPARTMENT = 4;  // Department column (E)
+    
+    // Filter only supervisors with Department = "Stitching"
+    const stitchingSupervisors = rows
+      .filter(row => {
+        const department = row[COL_DEPARTMENT] ? norm(row[COL_DEPARTMENT]) : '';
+        return department.toLowerCase() === 'stitching';
+      })
+      .map(row => {
+        const name = row[COL_NAME] ? norm(row[COL_NAME]) : '';
+        return name;
+      })
+      .filter(name => name && name.length > 0); // Remove empty names
+    
+    if (stitchingSupervisors.length === 0) {
+      console.warn('No stitching department supervisors found');
+      return DEFAULT_SUPERVISORS;
+    }
+    
+    // Remove duplicates and sort
+    const uniqueSupervisors = [...new Set(stitchingSupervisors.map(s => s.toUpperCase()))];
+    uniqueSupervisors.sort();
+    
+    console.log(`✅ Fetched ${uniqueSupervisors.length} stitching department supervisors:`, uniqueSupervisors);
+    
+    // Cache the result (10 minutes)
+    sheetDataCache.set(cacheKey, uniqueSupervisors, 10 * 60 * 1000);
+    
+    return uniqueSupervisors;
+  } catch (error) {
+    console.error('❌ Error fetching supervisors:', error);
+    return DEFAULT_SUPERVISORS; // Fallback to default list
+  }
+}
+
 async function isLotAlreadyIssued(lotNo, signal) {
   const cacheKey = generateIssueStatusCacheKey(lotNo);
   
   const cached = issueStatusCache.get(cacheKey);
-  if (cached !== undefined && cached !== null) { // FIX: Check for null too
+  if (cached !== undefined && cached !== null) {
     console.log('📦 Cache HIT for issue status:', lotNo, '->', cached);
     return cached;
   }
@@ -454,11 +529,8 @@ async function isLotAlreadyIssued(lotNo, signal) {
     console.log('📊 Index sheet rows count:', rows.length);
     
     const COL_LOT = 0;
-    const COL_DOI = 10;    // Date of Issue column (K column, index 10)
-    const COL_SUPERVISOR = 11; // Supervisor column (L column, index 11)
-
-    console.log('🔍 Searching for lot:', lotNo);
-    console.log('📋 Columns being checked: Lot=', COL_LOT, 'Date=', COL_DOI, 'Supervisor=', COL_SUPERVISOR);
+    const COL_DOI = 10;
+    const COL_SUPERVISOR = 11;
 
     let foundLot = false;
     let isIssued = false;
@@ -471,14 +543,6 @@ async function isLotAlreadyIssued(lotNo, signal) {
       
       if (rowLotNo === norm(lotNo)) {
         foundLot = true;
-        console.log(`🎯 Found lot ${lotNo} at row ${i + 2}:`, {
-          date: dateValue,
-          supervisor: supervisorValue,
-          hasDate: dateValue !== "",
-          hasSupervisor: supervisorValue !== "",
-          isIssued: dateValue !== "" || supervisorValue !== ""
-        });
-        
         isIssued = dateValue !== "" || supervisorValue !== "";
         break;
       }
@@ -490,22 +554,23 @@ async function isLotAlreadyIssued(lotNo, signal) {
     }
 
     console.log(`📝 Final result for ${lotNo}: isIssued =`, isIssued);
-    issueStatusCache.set(cacheKey, isIssued); // FIX: Always set a boolean value
+    issueStatusCache.set(cacheKey, isIssued);
     
     return isIssued;
   } catch (error) {
     console.warn('❌ Error checking issue status:', error);
-    issueStatusCache.set(cacheKey, false); // FIX: Always set false on error
+    issueStatusCache.set(cacheKey, false);
     return false;
   }
 }
+
 async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumber = null) {
   if (!GOOGLE_API_KEY || !ISSUE_LOG_SHEET_ID) {
     return { 
       pendingLots: 0, 
       pendingPcs: 0,
       garmentTypeSummary: [],
-      zipOrderDate: ''  // This will now ONLY be for current lot
+      zipOrderDate: ''
     };
   }
 
@@ -544,7 +609,7 @@ async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumbe
     let pendingLots = 0;
     let pendingPcs = 0;
     const garmentTypeMap = new Map();
-    let zipOrderDateForCurrentLot = '';  // Only store current lot's zip order date
+    let zipOrderDateForCurrentLot = '';
     
     for (let i = startRow; i < rows.length; i++) {
       const row = rows[i] || [];
@@ -560,22 +625,14 @@ async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumbe
       const statusRaw = row[COLUMN_INDICES.STATUS] || '';
       const zipOrderDateRaw = row[COLUMN_INDICES.ZIP_ORDER_DATE] || '';
       
-      // Check if this is the CURRENT LOT we're searching for
       if (currentLotNumber && norm(lotNumber) === norm(currentLotNumber)) {
         if (zipOrderDateRaw && zipOrderDateRaw.trim() !== '') {
           const zipDateString = norm(zipOrderDateRaw);
-          console.log(`🎯 Found Zip Order Date for SEARCHED LOT ${currentLotNumber}: ${zipDateString}`);
-          
-          // Extract just the date part (remove time if present)
           const dateParts = zipDateString.split(' ');
-          zipOrderDateForCurrentLot = dateParts[0]; // Take only the date part
-          console.log(`📅 Using zip order date for current lot: ${zipOrderDateForCurrentLot}`);
-        } else {
-          console.log(`📅 No zip order date found for searched lot ${currentLotNumber}`);
+          zipOrderDateForCurrentLot = dateParts[0];
         }
       }
       
-      // Process pending lots data for supervisor
       const supervisorMatches = supervisorNormalized === norm(supervisor).toLowerCase().trim();
       
       if (supervisorMatches && dateOfIssue) {
@@ -616,13 +673,11 @@ async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumbe
     const garmentTypeSummary = Array.from(garmentTypeMap.values())
       .sort((a, b) => b.pendingLots - a.pendingLots);
     
-    console.log('📦 Zip Order Date for current lot:', zipOrderDateForCurrentLot);
-    
     return {
       pendingLots,
       pendingPcs,
       garmentTypeSummary,
-      zipOrderDate: zipOrderDateForCurrentLot  // Return current lot's zip order date
+      zipOrderDate: zipOrderDateForCurrentLot
     };
     
   } catch (error) {
@@ -635,6 +690,7 @@ async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumbe
     };
   }
 }
+
 // ============================
 // LOT helpers
 // ============================
@@ -947,29 +1003,20 @@ function extractFirst4DigitsLot(itemName) {
 }
 
 async function fetchOldLotsFor(lotNo, signal) {
-  // First, call the Apps Script URL to log the search
-  // This is what stores "search" records (without supervisor)
   try {
     console.log('🔄 [OLD LOT] Searching for lot:', lotNo);
-    console.log('📤 [OLD LOT] Using Apps Script URL:', OLD_APPS_SCRIPT_URL);
     
-    // Create the URL with parameters EXACTLY as your previous version did
     const url = new URL(OLD_APPS_SCRIPT_URL);
     url.searchParams.append('lot', lotNo);
     url.searchParams.append('action', 'getLotData');
     
-    // Add timestamp for logging
     const searchTime = new Date().toISOString();
     url.searchParams.append('searchTime', searchTime);
     url.searchParams.append('source', 'issue_stitching_app');
     
-    console.log('📤 [OLD LOT] Calling URL:', url.toString());
-    
-    // Send the request - use no-cors (EXACTLY like before)
-    // This will store a search record WITHOUT supervisor
     fetch(url, { 
       signal,
-      mode: 'no-cors' // This is what your previous version used
+      mode: 'no-cors'
     }).then(() => {
       console.log('✅ [OLD LOT] Search logged to Apps Script');
     }).catch(err => {
@@ -978,10 +1025,8 @@ async function fetchOldLotsFor(lotNo, signal) {
     
   } catch (appsScriptError) {
     console.warn('⚠️ [OLD LOT] Apps Script call failed:', appsScriptError.message);
-    // Don't throw - continue with data fetching
   }
   
-  // Now fetch the actual lot data from Sheets API
   console.log('🔄 [OLD LOT] Fetching data from Sheets API...');
   
   const range = encodeURIComponent(`${OLD_LOTS_SOURCE_TAB}!A2:Z`);
@@ -1073,8 +1118,6 @@ async function fetchOldLotsFor(lotNo, signal) {
 
   const meta = await fetchOldLotMeta(lot4, signal);
   
-  // ============ IMPORTANT: Also prepare data for when lot is ISSUED ============
-  // This prepares the data structure that will be sent when supervisor is entered
   console.log('💾 [OLD LOT] Data ready for display and future issue');
   
   return {
@@ -1089,11 +1132,10 @@ async function fetchOldLotsFor(lotNo, signal) {
     rows: rowsOut,
     totals: { perSize: {}, grand: rowsOut.reduce((s,r)=>s+(r.totalPcs||0),0) },
     
-    // Store this data structure for when the lot is issued
     _payloadForIssue: {
       meta: {
-        issueDate: new Date().toISOString().split('T')[0], // Default date
-        supervisor: '', // Will be filled when issued
+        issueDate: new Date().toISOString().split('T')[0],
+        supervisor: '',
         sourceType: 'old',
         lotNumber: lot4,
         style: meta.style || firstItem.replace(/\b(\d{4})\b/, '').trim(),
@@ -1454,7 +1496,6 @@ function findLotInIndex(indexData, lotNo) {
   const headerColsCol = headers.findIndex(h => includes(h, 'headercols'));
   const imgCol = headers.findIndex(h => includes(h, 'image url') || (includes(h, 'image') && !includes(h, 'usage')));
   
-  // Add these columns for issue status check
   const dateOfIssueCol = headers.findIndex(h => includes(h, 'date of issue'));
   const supervisorCol = headers.findIndex(h => includes(h, 'supervisor'));
 
@@ -1470,7 +1511,7 @@ function findLotInIndex(indexData, lotNo) {
     if (rowLotNo === norm(lotNo)) {
       const hasDateOfIssue = dateOfIssueCol !== -1 && norm(row[dateOfIssueCol]) !== "";
       const hasSupervisor = supervisorCol !== -1 && norm(row[supervisorCol]) !== "";
-      const isAlreadyIssued = hasDateOfIssue || hasSupervisor; // CHANGED: OR instead of AND
+      const isAlreadyIssued = hasDateOfIssue || hasSupervisor;
 
       return {
         lotNumber: rowLotNo,
@@ -1483,7 +1524,6 @@ function findLotInIndex(indexData, lotNo) {
         sizes: headers.includes('sizes') && row[headers.indexOf('sizes')] || '',
         shades: headers.includes('shades') && row[headers.indexOf('shades')] || '',
         imageUrl: imgCol !== -1 ? norm(row[imgCol]) : '',
-        // Add issue status information
         dateOfIssue: dateOfIssueCol !== -1 ? norm(row[dateOfIssueCol]) : '',
         supervisor: supervisorCol !== -1 ? norm(row[supervisorCol]) : '',
         isAlreadyIssued: isAlreadyIssued
@@ -1502,41 +1542,9 @@ async function generateIssuePdf(matrix, {
   pendingLots = 0, 
   pendingPcs = 0, 
   garmentTypeSummary = [],
-  zipOrderDate = ''  // Add this parameter
+  zipOrderDate = ''
 }) {
   if (!matrix) return;
-
-  // Function to load QR code from a reliable source
-  async function loadQRCodeImage(imageUrl) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 80;
-        canvas.height = 80;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, 80, 80);
-        resolve(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => reject(new Error('Failed to load QR code image'));
-      img.src = imageUrl;
-    });
-  }
-
-  async function generateWIPQRCode(lotNumber) {
-    const trackingUrl = `https://script.google.com/macros/s/AKfycbyBaS5sEqHTMWcTrdxzjKhjHJg5zJ0TGRCIrPsgfpSHiAakBtQqCnptekUvBcTowItWyQ/exec?action=wipForm&lot=${lotNumber}`;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(trackingUrl)}`;
-    
-    return await loadQRCodeImage(qrUrl);
-  }
-
-  async function generateCompletedQRCode(lotNumber) {
-    const trackingUrl = `https://script.google.com/macros/s/AKfycbyBaS5sEqHTMWcTrdxzjKhjHJg5zJ0TGRCIrPsgfpSHiAakBtQqCnptekUvBcTowItWyQ/exec?action=completedForm&lot=${lotNumber}`;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(trackingUrl)}`;
-    
-    return await loadQRCodeImage(qrUrl);
-  }
 
   const sizesRaw = (matrix.source === 'old' ? Array(5).fill('') : (matrix.sizes || []));
   const sizes = sizesRaw.map(s => (s == null || s === 0 || s === '0') ? '' : String(s));
@@ -1552,7 +1560,6 @@ async function generateIssuePdf(matrix, {
 
   doc.setDrawColor(0); doc.setTextColor(0); doc.setLineWidth(line);
 
-  // Updated Header Function with QR Codes - MAKE THIS ASYNC
   async function addHeader(currentPage) {
     const borderX = 8, borderY = 8, borderW = W - 16, borderH = H - 16;
     
@@ -1564,32 +1571,29 @@ async function generateIssuePdf(matrix, {
     const headerTop = CM + 12;
     const contentWidth = W - (CM * 2);
 
-    // Four sections (removed manpower from header)
-    const minSectionW = 90;
-    let sectionW = Math.floor(contentWidth / 4);
+    const minSectionW = 120;
+    let sectionW = Math.floor(contentWidth / 3);
     if (sectionW < minSectionW) sectionW = minSectionW;
-    if (sectionW * 4 > contentWidth) sectionW = Math.floor(contentWidth / 4);
+    if (sectionW * 3 > contentWidth) sectionW = Math.floor(contentWidth / 3);
 
     const s1X = CM;
     const s2X = s1X + sectionW;
     const s3X = s2X + sectionW;
-    const s4X = s3X + sectionW;
     const sectionH = 80;
 
     if (currentPage === 1) {
       doc.setLineWidth(0.9);
-      doc.rect(CM, headerTop - 6, sectionW * 4, sectionH + 12);
+      doc.rect(CM, headerTop - 6, sectionW * 3, sectionH + 12);
       doc.setLineWidth(0.6);
       doc.rect(s1X, headerTop, sectionW, sectionH);
       doc.rect(s2X, headerTop, sectionW, sectionH);
       doc.rect(s3X, headerTop, sectionW, sectionH);
-      doc.rect(s4X, headerTop, sectionW, sectionH);
 
       doc.setFont('times', 'bold');
       doc.setFontSize(14);
       let headingY = headerTop - 10;
       if (headingY < borderY + 12) headingY = borderY + 12;
-      doc.text('Stitching Order', borderX + borderW / 2, headingY, { align: 'center' });
+      doc.text('Stitching JobOrder', borderX + borderW / 2, headingY, { align: 'center' });
     }
 
     function printLabelValue(label, value, x, y, labelFont = { style: 'bold', size: 10 }, valueFont = { style: 'normal', size: 10 }, maxValueW = null) {
@@ -1610,7 +1614,6 @@ async function generateIssuePdf(matrix, {
       doc.text(valText, valueX, y);
     }
 
-    // Section 1 - Basic info
     if (currentPage === 1) {
       const s1InnerX = s1X + 6;
       let s1Y = headerTop + 16;
@@ -1642,7 +1645,6 @@ async function generateIssuePdf(matrix, {
       printLabelValue('Fabric', fabricToPrint, s1InnerX, s1Y);
     }
 
-    // Section 2 - Lot info
     if (currentPage === 1) {
       const s2InnerX = s2X + 6;
       let s2Y = headerTop + 16;
@@ -1694,62 +1696,35 @@ async function generateIssuePdf(matrix, {
       doc.text(supToPrint, s2InnerX + supLabelW + 4, s2Y);
     }
 
-    // Section 3 - WIP QR Code
     if (currentPage === 1) {
       const s3InnerX = s3X + 6;
       let s3Y = headerTop + 16;
       
       doc.setFont('times', 'bold');
+      doc.setFontSize(10);
+      doc.text('Quality Approved Signature', s3InnerX, s3Y);
+      
+      s3Y += 20;
+      doc.setFont('times', 'normal');
       doc.setFontSize(9);
-      const wipText = 'WIP TRACKING';
-      const wipCenterX = s3InnerX + sectionW/2;
-      doc.text(wipText, wipCenterX, s3Y, { align: 'center' });
+      doc.text('Name:', s3InnerX, s3Y);
       
-      s3Y += 12;
-      try {
-        const wipQR = await generateWIPQRCode(matrix.lotNumber);
-        const qrSize = 40;
-        const qrX = s3InnerX + (sectionW - 12 - qrSize) / 2;
-        doc.addImage(wipQR, 'PNG', qrX, s3Y, qrSize, qrSize);
-        
-        s3Y += qrSize + 6;
-        doc.setFont('times', 'normal');
-        doc.setFontSize(7);
-      } catch (error) {
-        console.warn('Failed to generate WIP QR code:', error);
-        doc.setFont('times', 'italic');
-        doc.setFontSize(8);
-        doc.text('QR Code Error', s3InnerX + sectionW/2, s3Y + 20, { align: 'center' });
-      }
-    }
-
-    // Section 4 - Completed QR Code
-    if (currentPage === 1) {
-      const s4InnerX = s4X + 6;
-      let s4Y = headerTop + 16;
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.5);
+      const nameLineY = s3Y + 2;
+      doc.line(s3InnerX + 30, nameLineY, s3X + sectionW - 6, nameLineY);
       
-      doc.setFont('times', 'bold');
-      doc.setFontSize(9);
-      const completedText = 'COMPLETED LOT';
-      const completedCenterX = s4InnerX + sectionW/2;
-      doc.text(completedText, completedCenterX, s4Y, { align: 'center' });
+      s3Y += 16;
+      doc.text('Sign:', s3InnerX, s3Y);
       
-      s4Y += 12;
-      try {
-        const completedQR = await generateCompletedQRCode(matrix.lotNumber);
-        const qrSize = 40;
-        const qrX = s4InnerX + (sectionW - 12 - qrSize) / 2;
-        doc.addImage(completedQR, 'PNG', qrX, s4Y, qrSize, qrSize);
-        
-        s4Y += qrSize + 6;
-        doc.setFont('times', 'normal');
-        doc.setFontSize(7);
-      } catch (error) {
-        console.warn('Failed to generate Completed QR code:', error);
-        doc.setFont('times', 'italic');
-        doc.setFontSize(8);
-        doc.text('QR Code Error', s4InnerX + sectionW/2, s4Y + 20, { align: 'center' });
-      }
+      const signLineY = s3Y + 2;
+      doc.line(s3InnerX + 30, signLineY, s3X + sectionW - 6, signLineY);
+      
+      s3Y += 16;
+      doc.text('Date:', s3InnerX, s3Y);
+      
+      const dateLineY = s3Y + 2;
+      doc.line(s3InnerX + 30, dateLineY, s3X + sectionW - 6, dateLineY);
     }
 
     return {
@@ -1758,47 +1733,42 @@ async function generateIssuePdf(matrix, {
     };
   }
 
-  // Add first page header
-  const { headerBottomY, CM } = await addHeader(1);
+  // Calculate CM without calling addHeader
+  const CM = M + borderPad;
+  const tableTop = CM + 12 + 80 + 6 + 8; // headerTop (CM+12) + sectionH (80) + 6 + 8
 
-  const tableTop = Math.max(headerBottomY, CM + 12) + 8;
-
-  // Header: M.No, KARIGAR, C.table, COLOR, ...sizes, PCS, BACK, FRONT, PACKING
   const head = [[ 'M.No', 'KARIGAR', 'C.table', 'COLOR', ...sizes, 'PCS', 'BACK', 'FRONT', 'PACKING' ]];
 
-  // Body rows
   const body = (matrix.rows || []).map((r) => ([
-    valOrEmpty(r.mNo ?? ''),             // M.No
-    '',                                  // KARIGAR
-    valOrEmpty(r.cuttingTable),          // C.table
-    valOrEmpty(r.color),                 // COLOR
+    valOrEmpty(r.mNo ?? ''),
+    '',
+    valOrEmpty(r.cuttingTable),
+    valOrEmpty(r.color),
     ...(matrix.source === 'old'
-      ? Array(sizes.length).fill('')     // blanks for old lots
+      ? Array(sizes.length).fill('')
       : sizes.map(s => valOrEmpty(r.sizes?.[s]))
     ),
-    valOrEmpty(r.totalPcs),              // PCS
-    valOrEmpty(r.back ?? ''),            // BACK
-    valOrEmpty(r.front ?? ''),           // FRONT
-    valOrEmpty(r.packing ?? '')          // PACKING (new column)
+    valOrEmpty(r.totalPcs),
+    valOrEmpty(r.back ?? ''),
+    valOrEmpty(r.front ?? ''),
+    valOrEmpty(r.packing ?? '')
   ]));
 
-  // Foot
   const foot = [[
-    '',          // M.No
-    '',          // KARIGAR
-    '—',         // C.table
-    'TOTAL',     // COLOR
-    ...sizes.map(() => ''),
-    valOrEmpty(matrix.totals?.grand),    // PCS grand total
-    '',          // BACK
-    '',          // FRONT
-    ''           // PACKING
+    '',
+    '',
+    '—',
+    'TOTAL',
+    ...sizes.map(s => valOrEmpty(matrix.totals?.perSize?.[s] ?? 0)),
+    valOrEmpty(matrix.totals?.grand),
+    '',
+    '',
+    ''
   ]];
 
   const CM2 = CM;
   const available = W - (CM2 * 2);
 
-  // Fixed widths
   const fixedW = { 
     mno: 40,
     kaigar: 85, 
@@ -1819,7 +1789,6 @@ async function generateIssuePdf(matrix, {
     sizeW = candidate > desiredSizeW ? candidate : desiredSizeW;
   }
 
-  // Column indices
   const idxMno   = 0;
   const idxKaigar = 1;
   const idxTable  = 2;
@@ -1830,7 +1799,6 @@ async function generateIssuePdf(matrix, {
   const idxFront = idxBack + 1;
   const idxPacking = idxFront + 1;
 
-  // Column styles
   const colStyles = {
     [idxMno]:    { halign: 'center', cellWidth: fixedW.mno,    overflow: 'linebreak' },
     [idxKaigar]: { halign: 'left',   cellWidth: fixedW.kaigar, overflow: 'linebreak' },
@@ -1845,7 +1813,6 @@ async function generateIssuePdf(matrix, {
     colStyles[idxFirstSize + i] = { halign: 'center', cellWidth: sizeW, overflow: 'linebreak' };
   }
 
-  // Configure autoTable for multiple pages
   const tableConfig = {
     head, 
     body, 
@@ -1882,10 +1849,8 @@ async function generateIssuePdf(matrix, {
     columnStyles: colStyles,
     margin: { left: CM2, right: CM2 },
     didDrawPage: async function(data) {
-      // Draw header on each page
       await addHeader(data.pageNumber);
       
-      // Draw page number
       const pageCount = doc.internal.getNumberOfPages();
       doc.setFontSize(8);
       doc.text(
@@ -1894,7 +1859,6 @@ async function generateIssuePdf(matrix, {
         doc.internal.pageSize.height - 10
       );
       
-      // Draw border on all pages
       const borderX = 8, borderY = 8, borderW = W - 16, borderH = H - 16;
       if (data.pageNumber > 1) {
         doc.rect(borderX, borderY, borderW, borderH);
@@ -1914,13 +1878,14 @@ async function generateIssuePdf(matrix, {
       pendingLots, 
       pendingPcs, 
       garmentTypeSummary,
-      zipOrderDate  // Add this parameter
+      zipOrderDate
     });
   }
 
   const fname = `Lot_${matrix.lotNumber || 'Unknown'}_Issue_${(issueDate || '').replace(/-/g, '')}.pdf`;
   doc.save(fname);
 }
+
 async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, { 
   manpower = '0', 
   pendingLots = 0, 
@@ -1928,48 +1893,6 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
   garmentTypeSummary = [],
   zipOrderDate = ''
 }) {
-  // Function to draw header on each page (simplified version)
-  async function addHeader(pageNumber) {
-    const CM = CM2;
-    const headerTop = CM + 12;
-    const contentWidth = W - (CM * 2);
-
-    // Four sections
-    const minSectionW = 90;
-    let sectionW = Math.floor(contentWidth / 4);
-    if (sectionW < minSectionW) sectionW = minSectionW;
-    if (sectionW * 4 > contentWidth) sectionW = Math.floor(contentWidth / 4);
-
-    const s1X = CM;
-    const s2X = s1X + sectionW;
-    const s3X = s2X + sectionW;
-    const s4X = s3X + sectionW;
-    const sectionH = 80;
-
-    if (pageNumber === 1) {
-      doc.setLineWidth(0.9);
-      doc.rect(CM, headerTop - 6, sectionW * 4, sectionH + 12);
-      doc.setLineWidth(0.6);
-      doc.rect(s1X, headerTop, sectionW, sectionH);
-      doc.rect(s2X, headerTop, sectionW, sectionH);
-      doc.rect(s3X, headerTop, sectionW, sectionH);
-      doc.rect(s4X, headerTop, sectionW, sectionH);
-
-      doc.setFont('times', 'bold');
-      doc.setFontSize(14);
-      let headingY = headerTop - 10;
-      doc.text('Stitching Order', W / 2, headingY, { align: 'center' });
-    }
-
-    return {
-      headerBottomY: headerTop + sectionH + 6,
-      CM
-    };
-  }
-
-  // Draw header for current page
-  await addHeader(doc.internal.getCurrentPageInfo().pageNumber);
-
   const leftBoxH = 150;
   const leftBoxX = CM2;
   const leftBoxY = afterTableY;
@@ -1980,13 +1903,11 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
   const imageBoxY = leftBoxY;
   const imageBoxH = leftBoxH;
 
-  // Garment Type Summary Box
   const garmentSummaryBoxW = (W - CM2 * 3) * 0.30;
   const garmentSummaryBoxX = imageBoxX + imageBoxW + 15;
   const garmentSummaryBoxY = leftBoxY;
   const garmentSummaryBoxH = leftBoxH;
 
-  // Draw left box (checklist)
   doc.rect(leftBoxX, leftBoxY, leftBoxW, leftBoxH);
 
   const checklistRows = ['Brand','EMB Recd', 'Printing Recd', 'Zip Recd', 'Dori Recd', 'Label', 'Any Other'];
@@ -2007,7 +1928,6 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
     doc.text(checklistRows[i], leftBoxX + dateColW + 4, yy + rowH / 2 + 4);
   }
 
-  // Draw image box
   const canShowImage = matrix.source !== 'old' && !!matrix.imageUrl;
   if (canShowImage) {
     const fileId = extractDriveId(matrix.imageUrl);
@@ -2056,31 +1976,25 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
     doc.text('No image', imageBoxX + 8, imageBoxY + 20);
   }
 
-  // ============ Garment Type Summary Box ============
   doc.rect(garmentSummaryBoxX, garmentSummaryBoxY, garmentSummaryBoxW, garmentSummaryBoxH);
   
-  // Title
   doc.setFont('times', 'bold'); 
   doc.setFontSize(9);
   doc.text('GARMENT TYPE SUMMARY', garmentSummaryBoxX + garmentSummaryBoxW / 2, garmentSummaryBoxY + 14, { align: 'center' });
   
-  // Total pending lots
   doc.setFont('times', 'bold');
   doc.setFontSize(8);
   const totalPendingY = garmentSummaryBoxY + 30;
   doc.text(`Total Pending Lots: ${pendingLots}`, garmentSummaryBoxX + 8, totalPendingY);
   
-  // Total pending pcs
   const totalPcsY = totalPendingY + 8;
   doc.text(`Total Pending Pcs: ${pendingPcs.toLocaleString()}`, garmentSummaryBoxX + 8, totalPcsY);
   
-  // Separator line
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.3);
   const separatorY = totalPcsY + 10;
   doc.line(garmentSummaryBoxX + 8, separatorY, garmentSummaryBoxX + garmentSummaryBoxW - 8, separatorY);
   
-  // Garment types breakdown header
   doc.setFont('times', 'bold');
   doc.setFontSize(7);
   const breakdownY = separatorY + 8;
@@ -2094,13 +2008,10 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
     let yPos = breakdownY + 12;
     const lineHeight = 10;
     const itemSpacing = 2;
-    const maxTypeWidth = garmentSummaryBoxW - 16;
     
-    // Sort by pending lots (descending)
     const sortedTypes = [...garmentTypeSummary].sort((a, b) => b.pendingLots - a.pendingLots);
     const typesToShow = sortedTypes.slice(0, 4);
     
-    // Fixed column widths
     const typeColWidth = 60;
     const lotsColWidth = 25;
     const pcsColWidth = 35;
@@ -2137,107 +2048,72 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
     doc.text('No pending lots for this supervisor', garmentSummaryBoxX + 8, noTypesY);
   }
 
-  // ============ ENHANCED DRAW STICKERS FUNCTION WITH ZIP ORDER DATE BOX ============
-function drawStickers() {
+  function drawStickers() {
     const availableWidth = W - (CM2 * 2);
     const cardGap = 10;
     const totalGaps = cardGap * 3;
     const cardHeight = 70;
     
-    // Calculate equal width for all 4 cards
     const cardWidth = (availableWidth - totalGaps) / 4;
-    
-    // Starting X position
     const startX = CM2;
-    
-    // Calculate stickerY position (above signature boxes)
-    const sigBoxY = H - 140; // Signature boxes Y position
+    const sigBoxY = H - 140;
     const stickerY = sigBoxY - cardHeight - 8;
     
-    // ============ ZIP ORDER DATE BOX (SMALL BOX ABOVE MANPOWER) ============
-    // Position for Zip Order Date box - above the first card (Manpower)
     const zipBoxWidth = cardWidth;
-    const zipBoxHeight = 40; // Smaller height for zip box
+    const zipBoxHeight = 40;
     const zipBoxX = startX;
-    const zipBoxY = stickerY - zipBoxHeight - 10; // Position above the stickers
+    const zipBoxY = stickerY - zipBoxHeight - 10;
     
-    // Draw Zip Order Date Box with BLACK border
-    doc.setDrawColor(0, 0, 0); // BLACK border color
-    doc.setLineWidth(0.7); // Same thickness as other card borders
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.7);
     doc.rect(zipBoxX, zipBoxY, zipBoxWidth, zipBoxHeight);
     
-    // Title
     doc.setFont('times', 'bold');
     doc.setFontSize(9);
     doc.text('ZIP ORDER DATE', zipBoxX + zipBoxWidth / 2, zipBoxY + 12, { align: 'center' });
     
-    // Add decorative line under title - BLACK
-    doc.setDrawColor(0, 0, 0); // BLACK line color
+    doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.6);
     const lineY = zipBoxY + 16;
     doc.line(zipBoxX + 10, lineY, zipBoxX + zipBoxWidth - 10, lineY);
     
     if (zipOrderDate && zipOrderDate.trim() !== '') {
-      // Format the date nicely
       const formattedDate = printableDate(zipOrderDate);
-      
-      // Display date prominently - BLACK
       doc.setFont('times', 'bold');
       doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0); // BLACK color for date
-      
-      // Center the date
+      doc.setTextColor(0, 0, 0);
       const dateX = zipBoxX + zipBoxWidth / 2;
       const dateY = zipBoxY + zipBoxHeight / 2 + 5;
-      
       doc.text(formattedDate, dateX, dateY, { align: 'center' });
     } else {
-      // If no date, show blank/dashed line
       doc.setFont('times', 'normal');
       doc.setFontSize(10);
-      doc.setTextColor(156, 163, 175); // Gray color
-      
+      doc.setTextColor(156, 163, 175);
       const noDateX = zipBoxX + zipBoxWidth / 2;
       const noDateY = zipBoxY + zipBoxHeight / 2 + 5;
-      
       doc.text('__________', noDateX, noDateY, { align: 'center' });
-      
-      // Reset text color
       doc.setTextColor(0, 0, 0);
     }
     
-    // Add small info text at bottom
-    doc.setFont('times', 'italic');
-    doc.setFontSize(5);
-    doc.setTextColor(107, 114, 128);
-    const infoY = zipBoxY + zipBoxHeight - 6;
-    // doc.text('From Index Sheet', zipBoxX + zipBoxWidth / 2, infoY, { align: 'center' });
-
-    // ============ BLACK & WHITE PROFESSIONAL STYLE FOR CARDS ============
     function drawCard(x, y, width, height, title) {
-      // Card background - clean white with subtle border
       doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(0, 0, 0); // BLACK border
+      doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.7);
       doc.rect(x, y, width, height, 'FD');
       
-      // Header section with subtle bottom border
       const headerHeight = 20;
       doc.setFillColor(255, 255, 255);
       doc.rect(x, y, width, headerHeight, 'F');
       
-      // Header bottom border - subtle line
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.6);
       doc.line(x, y + headerHeight, x + width, y + headerHeight);
       
-      // Header title - clean and centered
       doc.setFont('times', 'bold');
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
       doc.text(title, x + width / 2, y + headerHeight / 2 + 3, { align: 'center', baseline: 'middle' });
       
-      // Subtle top border for the entire card
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.6);
       doc.line(x, y, x + width, y);
@@ -2245,11 +2121,9 @@ function drawStickers() {
       return headerHeight;
     }
 
-    // ============ CARD 1: MANPOWER ============
     const manpowerX = startX;
     const manpowerHeaderH = drawCard(manpowerX, stickerY, cardWidth, cardHeight, 'MANPOWER');
     
-    // Manpower value - centered and prominent
     doc.setFont('times', 'bold');
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(18);
@@ -2257,13 +2131,11 @@ function drawStickers() {
     const manpowerValueY = stickerY + manpowerHeaderH + (cardHeight - manpowerHeaderH) / 2 - 5;
     doc.text(manpowerValue, manpowerX + cardWidth / 2, manpowerValueY, { align: 'center', baseline: 'middle' });
     
-    // Subtitle
     doc.setFont('times', 'normal');
     doc.setFontSize(7);
     const subtitleY = stickerY + cardHeight - 10;
     doc.text('Total Workers', manpowerX + cardWidth / 2, subtitleY, { align: 'center' });
 
-    // ============ CARD 2: STITCHING INSPECTION ============
     const stitchX = manpowerX + cardWidth + cardGap;
     const stitchHeaderH = drawCard(stitchX, stickerY, cardWidth, cardHeight, 'STITCHING INSPECTION');
     
@@ -2273,61 +2145,50 @@ function drawStickers() {
     const checkedY = stickerY + stitchHeaderH + 8;
     doc.text('CHECKED', stitchX + cardWidth / 2, checkedY, { align: 'center' });
     
-    // Line under CHECKED
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.5);
     const lineY2 = checkedY + 4;
     doc.line(stitchX + pad, lineY2, stitchX + cardWidth - pad, lineY2);
     
-    // Lot No. field
     doc.setFont('times', 'normal');
     doc.setFontSize(8);
     const lotNoY = lineY2 + 8;
     doc.text('Lot No.:', stitchX + pad, lotNoY);
     
-    // Lot number underline
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.2);
     const lotLineY = lotNoY + 1;
     doc.line(stitchX + pad + 25, lotLineY, stitchX + cardWidth - pad, lotLineY);
     
-    // Date field
     const dateY2 = lotNoY + 8;
     doc.text('Date:', stitchX + pad, dateY2);
     
-    // Date underline
     const dateLineY = dateY2 + 1;
     doc.line(stitchX + pad + 18, dateLineY, stitchX + cardWidth - pad, dateLineY);
     
-    // Signature label
     doc.setFont('times', 'italic');
     doc.setFontSize(7);
     const sigLabelY = stickerY + cardHeight - 8;
     doc.text('Pintu Sir', stitchX + cardWidth - pad, sigLabelY, { align: 'right' });
 
-    // ============ CARD 3: WORK SUMMARY ============
     const workSummaryX = stitchX + cardWidth + cardGap;
     const workHeaderH = drawCard(workSummaryX, stickerY, cardWidth, cardHeight, 'WORK SUMMARY');
     
-    // Pending Lots
     doc.setFont('times', 'bold');
     doc.setFontSize(9);
     const pendingLotsLabelY = stickerY + workHeaderH + 10;
     doc.text('PENDING LOTS:', workSummaryX + pad, pendingLotsLabelY);
     
-    // Pending Lots value
     doc.setFont('times', 'bold');
     doc.setFontSize(8);
     const pendingLotsStr = String(pendingLots || 0);
     doc.text(pendingLotsStr, workSummaryX + cardWidth - pad, pendingLotsLabelY, { align: 'right' });
     
-    // Pending Pcs
     doc.setFont('times', 'bold');
     doc.setFontSize(8);
     const pendingPcsLabelY = pendingLotsLabelY + 14;
     doc.text('PENDING PCS:', workSummaryX + pad, pendingPcsLabelY);
     
-    // Pending Pcs value with dynamic sizing
     let pcsFontSize = 8;
     const pendingPcsStr = String(pendingPcs || 0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
     if (pendingPcsStr.length > 8) pcsFontSize = 11;
@@ -2337,13 +2198,11 @@ function drawStickers() {
     doc.setFontSize(pcsFontSize);
     doc.text(pendingPcsStr, workSummaryX + cardWidth - pad, pendingPcsLabelY, { align: 'right' });
     
-    // Subtle separator line
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.2);
     const separatorY2 = pendingLotsLabelY + 6;
     doc.line(workSummaryX + pad, separatorY2, workSummaryX + cardWidth - pad, separatorY2);
 
-    // ============ CARD 4: PACKING PERSON ============
     const packingX = workSummaryX + cardWidth + cardGap;
     const packingHeaderH = drawCard(packingX, stickerY, cardWidth, cardHeight, 'PACKING PERSON');
     
@@ -2352,35 +2211,30 @@ function drawStickers() {
     const nameLabelY = stickerY + packingHeaderH + 8;
     doc.text('NAME', packingX + cardWidth / 2, nameLabelY, { align: 'center' });
     
-    // Line under NAME
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.3);
     const nameLineY = nameLabelY + 4;
     doc.line(packingX + pad, nameLineY, packingX + cardWidth - pad, nameLineY);
     
-    // Name field
     doc.setFont('times', 'normal');
     doc.setFontSize(8);
     const nameFieldY = nameLineY + 8;
     doc.text('Name:', packingX + pad, nameFieldY);
     
-    // Name underline
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.);
     const nameUnderlineY = nameFieldY + 1;
     doc.line(packingX + pad + 20, nameUnderlineY, packingX + cardWidth - pad, nameUnderlineY);
     
-    // Sign field
     const signFieldY = nameFieldY + 8;
     doc.text('Sign:', packingX + pad, signFieldY);
     
-    // Sign underline
     const signUnderlineY = signFieldY + 1;
     doc.line(packingX + pad + 20, signUnderlineY, packingX + cardWidth - pad, signUnderlineY);
   }
+  
   drawStickers();
 
-  // ============ Signature boxes ============
   const sig1W = 120;
   const sig2W = 120;
   const sig3W = 200;
@@ -2404,10 +2258,10 @@ function drawStickers() {
   drawSigBoxWithLabel(sigStartX + sig1W + sigGap, sigBoxY, sig2W, sigBoxH, 'Lot Issue (Cutting Head)');
   drawSigBoxWithLabel(sigStartX + sig1W + sigGap + sig2W + sigGap, sigBoxY, sig3W, sigBoxH, 'Completed Lot (Stitching Supervisor)');
 
-  // Hindi paragraphs
   const hindiParagraphs = [
     'यहाँ पिंटू सर के हस्ताक्षर कराना अनिवार्य है। उनके हस्ताक्षर के बिना लॉट जारी नहीं किया जाएगा।',
-    'लॉट पूरा होने के बाद पेपर को अकाउंट ऑफिस में जमा कराना है।'
+    'लॉट की क्वालिटी चेक कराना जरूरी है।',
+    'लॉट की क्वालिटी चेक कराए बिना लॉट की पेमेंट नहीं होगी।'
   ];
 
   try {
@@ -2428,7 +2282,12 @@ function drawStickers() {
         const word = words[i];
         const test = cur ? (cur + ' ' + word) : word;
         const w = ctx.measureText(test).width;
-        if (w > maxTextW && cur) { lines.push(cur); cur = word; } else { cur = test; }
+        if (w > maxTextW && cur) { 
+          lines.push(cur); 
+          cur = word; 
+        } else { 
+          cur = test; 
+        }
       }
       if (cur) lines.push(cur);
       return lines;
@@ -2480,44 +2339,13 @@ function drawStickers() {
 
     doc.addImage(dataUrl, 'PNG', imgX, imgY, imgW, imgH);
   } catch (e) {
-    doc.setFont('times', 'normal'); doc.setFontSize(9);
+    doc.setFont('times', 'normal'); 
+    doc.setFontSize(9);
     const fallbackY = sigBoxY + sigBoxH + 15;
     doc.text('NOTE: Get Pintu sir\'s signature. Lot cannot be issued without it.', CM2, fallbackY, { maxWidth: W - 2 * CM2 });
   }
 }
-// Helper function for dashed borders
-function drawDashedBorder(doc, x, y, w, h) {
-  const dashGap = 4;
-  const dashLen = 2;
-  
-  let curX = x + 4;
-  const topDashY = y + 4;
-  while (curX < x + w - 4) {
-    doc.line(curX, topDashY, Math.min(curX + dashLen, x + w - 4), topDashY);
-    curX += dashGap;
-  }
-  
-  curX = x + 4;
-  const botDashY = y + h - 4;
-  while (curX < x + w - 4) {
-    doc.line(curX, botDashY, Math.min(curX + dashLen, x + w - 4), botDashY);
-    curX += dashGap;
-  }
-  
-  let curY = y + 4;
-  const leftDashX = x + 4;
-  while (curY < y + h - 4) {
-    doc.line(leftDashX, curY, leftDashX, Math.min(curY + dashLen, y + h - 4));
-    curY += dashGap;
-  }
-  
-  curY = y + 4;
-  const rightDashX = x + w - 4;
-  while (curY < y + h - 4) {
-    doc.line(rightDashX, curY, rightDashX, Math.min(curY + dashLen, y + h - 4));
-    curY += dashGap;
-  }
-}
+
 // ============================
 // STYLES
 // ============================
@@ -2532,7 +2360,7 @@ const Wrap = styled.div`
 `;
 
 const HeaderPaper = styled.div`
-  background: rgba(15, 23, 42, 0.7);
+  background: rgba(0, 30, 99, 0.7);
   border-radius: 16px;
   padding: 24px;
   margin-bottom: 24px;
@@ -2553,7 +2381,7 @@ const TitleSection = styled.div`
 const TitleIcon = styled.div`
   display: flex; align-items: center; justify-content: center;
   width: 60px; height: 60px; border-radius: 14px;
-  background: linear-gradient(135deg, #6366f1 0%, #1b0058ff 100%);
+  background: linear-gradient(135deg, #000274 0%, #1b0058ff 100%);
   color: white; font-size: 24px;
   box-shadow: 0 6px 12px rgba(99, 102, 241, 0.25);
 `;
@@ -2567,7 +2395,7 @@ const SearchBox = styled.label`
   display: grid; grid-template-columns: 24px 1fr; align-items: center; gap: 12px;
   padding: 14px 16px; border-radius: 12px; background: #ffffffff; border: 2px solid #e2e8f0;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04); color: #114793ff; transition: all 0.2s ease;
-  &:focus-within { border-color: #8b5cf6; box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15); }
+  &:focus-within { border-color: #000000; box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15); }
   input { background: transparent; border: none; outline: none; color: #000000ff; font-size: 1rem; ::placeholder { colorrgba(0, 59, 143, 1)b8; } }
 `;
 
@@ -2596,10 +2424,9 @@ const Spinner = styled.div`
     100% { transform: rotate(360deg); }
   }
   
-  /* Smooth animation with easing */
   animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);
 `;
-// Add these styled components
+
 const InstructionsSection = styled.div`
   background: white;
   border-radius: 16px;
@@ -2621,7 +2448,7 @@ const InstructionsHeader = styled.div`
     margin: 0;
     font-size: 1.5rem;
     font-weight: 600;
-    color: #1e293b;
+    color: #000000;
   }
   
   svg {
@@ -2657,17 +2484,18 @@ const InstructionCard = styled.div`
   
   .instruction-title {
     font-weight: 600;
-    color: #1e293b;
+    color: #002869;
     margin-bottom: 12px;
     font-size: 1.1rem;
   }
   
   .instruction-desc {
-    color: #64748b;
+    color: #000000;
     line-height: 1.6;
     font-size: 0.95rem;
   }
 `;
+
 const LanguageBtn = styled(BaseBtn)`
   background: ${props => props.$isHindi ? '#dc2626' : '#059669'};
   color: white;
@@ -2679,6 +2507,7 @@ const LanguageBtn = styled(BaseBtn)`
     transform: translateY(-1px);
   }
 `;
+
 const FeaturesList = styled.div`
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
   border-radius: 12px;
@@ -2764,36 +2593,11 @@ const TipItem = styled.div`
     line-height: 1.4;
   }
 `;
+
 const ErrorCard = styled.div`
   margin-bottom: 24px; display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: center;
   background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #dc2626;
   padding: 14px 16px; border-radius: 12px; font-weight: 500;
-`;
-
-const Alert = styled.div`
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 16px 20px;
-  margin-top: 16px;
-  border: 1px solid #fde4e4;
-  background: linear-gradient(135deg,#fffafa 0%,#fff 100%);
-  border-radius: 14px;
-  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.15);
-  color: #b91c1c;
-`;
-
-const AlertTitle = styled.div`
-  font-weight: 600;
-  font-size: 0.95rem;
-  line-height: 1.3;
-`;
-
-const AlertMessage = styled.div`
-  font-size: 0.9rem;
-  line-height: 1.45;
-  color: #6b7280;
 `;
 
 const HintCard = styled.div`
@@ -2821,14 +2625,14 @@ const TablePanel = styled.div`
 const PanelHeader = styled.div`
   display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;
   h3 { margin: 0; font-size: 1.2rem; font-weight: 600; color: #1e293b; }
-  svg { color: #8b5cf6; }
+  svg { color: #1d0061; }
 `;
 
 const InfoGrid = styled.div` display: grid; gap: 16px; margin-bottom: 24px; `;
 const InfoItem = styled.div` display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 12px; background: #f8fafc; border-radius: 12px;`;
 const InfoIcon = styled.div` display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; background: rgba(139, 92, 246, 0.1); color: #8b5cf6;`;
 const InfoLabel = styled.div` font-size: 0.85rem; color: #020066ff; font-weight: 500; margin-bottom: 4px; `;
-const InfoValue = styled.div` font-weight: 600; color: #1e293b; font-size: 1rem; `;
+const InfoValue = styled.div` font-weight: 600; color: #001941; font-size: 1rem; `;
 
 const SummaryCard = styled.div` display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; padding: 16px; background: #f8fafc; border-radius: 12px;`;
 const SummaryItem = styled.div` text-align: center; padding: 12px; border-bottom: 1px solid blue;`;
@@ -2841,14 +2645,13 @@ const TableContainer = styled.div` width: 100%; overflow: auto; `;
 const Table = styled.table`
   width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.9rem;
   thead th { position: sticky; top: 0; background: #05315eff; text-align: center; padding: 12px 14px; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #fff; white-space: nowrap; border-radius: 1px; }
-  tbody td, tfoot td { padding: 10px 14px;color:#000000ff;  border: 1px solid #f1f5f9; }
-  tbody tr { transition: background 0.2s ease; &:hover { background: #f8fafc; } }
+  tbody td, tfoot td { padding: 10px 14px;color:#000000ff;  border: 1px solid #000000; }
+  tbody tr { transition: background 0.2s ease; &:hover { background: #ffffff; } }
   td.num { text-align: center; font-variant-numeric: tabular-nums; }
   td.strong, th.strong { font-weight: 700; }
   tfoot td { background: #ffffffff; font-weight: 700; color: #000000ff; }
 `;
 
-/* ===== Simple Dialog Styles ===== */
 const DialogOverlay = styled.div`
   position: fixed;
   top: 0;
@@ -2962,7 +2765,7 @@ const SimpleField = styled.label`
   gap: 8px;
   margin: 20px 0 16px;
   
-  input {
+  input, select {
     width: 90%;
     padding: 14px 16px;
     border-radius: 12px;
@@ -2983,67 +2786,7 @@ const SimpleField = styled.label`
   }
 `;
 
-const SimpleInlineError = styled.div`
-  margin-top: 16px;
-  display: grid;
-  grid-template-columns: 18px 1fr;
-  gap: 10px;
-  align-items: center;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  color: #dc2626;
-  padding: 14px 16px;
-  border-radius: 12px;
-  font-size: 0.9rem;
-`;
-
-const ProgressSteps = styled.div`
-  margin: 16px 0;
-  padding: 16px;
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-`;
-
-const ProgressStep = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 8px 0;
-  color: ${props => props.completed ? '#16a34a' : props.active ? '#8b5cf6' : '#64748b'};
-  font-weight: ${props => (props.completed || props.active) ? '600' : '500'};
-  
-  .step-icon {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.7rem;
-    background: ${props => props.completed ? '#16a34a' : props.active ? '#8b5cf6' : '#e2e8f0'};
-    color: ${props => (props.completed || props.active) ? 'white' : '#64748b'};
-  }
-`;
-
-const RetryButton = styled.button`
-  background: #f59e0b;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 14px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  font-size: 0.9rem;
-  
-  &:hover {
-    background: #d97706;
-  }
-`;
+const FieldLabel = styled.div` display: inline-flex; align-items: center; gap: 8px; font-size: 0.9rem; color: #475569; font-weight: 500; `;
 const AddButton = styled.button`
   white-space: nowrap;
   border-radius: 8px;
@@ -3059,57 +2802,8 @@ const AddButton = styled.button`
   }
 `;
 
-const Field = styled.label`
-  display: grid; gap: 8px; margin: 16px 0 12px;
-  input { width: 100%; padding: 12px 14px; border-radius: 12px; border: 2px solid #e2e8f0; background: white; color: #1e293b; outline: none; transition: all 0.2s ease; font-size: 0.95rem;
-    &:focus { border-color: #8b5cf6; box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15); } }
-`;
-const FieldLabel = styled.div` display: inline-flex; align-items: center; gap: 8px; font-size: 0.9rem; color: #475569; font-weight: 500; `;
-const InlineError = styled.div` margin-top: 12px; display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: center; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #dc2626; padding: 10px 12px; border-radius: 10px; font-size: 0.9rem; `;
-
-const StatusMessage = styled.div`
-  display: grid;
-  grid-template-columns: 20px 1fr;
-  gap: 10px;
-  align-items: center;
-  padding: 14px 16px;
-  border-radius: 12px;
-  font-weight: 500;
-  margin: 16px 0;
-  background: ${props => {
-    switch (props.status) {
-      case 'success': return 'rgba(34, 197, 94, 0.1)';
-      case 'error': return 'rgba(239, 68, 68, 0.1)';
-      default: return 'rgba(59, 130, 246, 0.1)';
-    }
-  }};
-  border: 1px solid ${props => {
-    switch (props.status) {
-      case 'success': return 'rgba(34, 197, 94, 0.2)';
-      case 'error': return 'rgba(239, 68, 68, 0.2)';
-      default: return 'rgba(59, 130, 246, 0.2)';
-    }
-  }};
-  color: ${props => {
-    switch (props.status) {
-      case 'success': return '#16a34a';
-      case 'error': return '#dc2626';
-      default: return '#1d4ed8';
-    }
-  }};
-
-  .spinning {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-`;
-
 // ============================
-// REACT COMPONENT (OPTIMIZED)
+// REACT COMPONENT
 // ============================
 export default function IssueStitching() {
   const [lotInput, setLotInput] = useState('');
@@ -3123,18 +2817,21 @@ export default function IssueStitching() {
   const t = translations[language];
   const [attendanceCount, setAttendanceCount] = useState('');
   const [pendingData, setPendingData] = useState({ pendingLots: 0, pendingPcs: 0 });
-
-
+  
   const [showIssueDialog, setShowIssueDialog] = useState(false);
   const [issueDate, setIssueDate] = useState(() => todayLocalISO());
   const [supervisor, setSupervisor] = useState('');
   const [dialogError, setDialogError] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState('');
-   const toggleLanguage = () => {
+  
+  // State for supervisors from Google Sheet
+  const [supervisorOptions, setSupervisorOptions] = useState([]);
+  const [loadingSupervisors, setLoadingSupervisors] = useState(false);
+
+  const toggleLanguage = () => {
     setLanguage(prev => prev === 'en' ? 'hi' : 'en');
   };
-
 
   // Cache cleanup on component mount
   useEffect(() => {
@@ -3147,37 +2844,40 @@ export default function IssueStitching() {
     return () => clearInterval(interval);
   }, []);
 
-  // Supervisor suggestions with persistence
-  const LS_KEY_SUPERVISORS = 'issueStitching.supervisors';
-  const [supervisorOptions, setSupervisorOptions] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(LS_KEY_SUPERVISORS) || '[]');
-      return uniqCaseInsensitive([...DEFAULT_SUPERVISORS, ...saved]);
-    } catch {
-      return DEFAULT_SUPERVISORS.slice();
-    }
-  });
-
-  function saveSupervisorOptions(next) {
-    const onlyCustom = next.filter(
-      s => !DEFAULT_SUPERVISORS.map(x => x.toLowerCase()).includes((s || '').toLowerCase())
-    );
-    localStorage.setItem(LS_KEY_SUPERVISORS, JSON.stringify(onlyCustom));
-  }
-
-  function addSupervisorToOptions(name) {
-    const t = titleCase(name);
-    if (!t) return;
-    const next = uniqCaseInsensitive([...supervisorOptions, t]);
-    setSupervisorOptions(next);
-    saveSupervisorOptions(next);
-  }
-
-  const typedIsNewSupervisor = useMemo(() => {
-    const t = (supervisor ?? '').trim().toLowerCase();
-    if (!t) return false;
-    return !supervisorOptions.some(opt => (opt || '').toLowerCase() === t);
-  }, [supervisor, supervisorOptions]);
+  // Fetch supervisors from Google Sheet
+  useEffect(() => {
+    let isMounted = true;
+    let intervalId;
+    
+    const fetchSupervisors = async () => {
+      if (!isMounted) return;
+      setLoadingSupervisors(true);
+      try {
+        const supervisors = await fetchSupervisorsFromSheet(abortRef.current?.signal);
+        if (isMounted) {
+          setSupervisorOptions(supervisors);
+          console.log('Supervisors loaded:', supervisors);
+        }
+      } catch (error) {
+        console.error('Failed to fetch supervisors:', error);
+        if (isMounted) {
+          setSupervisorOptions(DEFAULT_SUPERVISORS);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingSupervisors(false);
+        }
+      }
+    };
+    
+    fetchSupervisors();
+    intervalId = setInterval(fetchSupervisors, 5 * 60 * 1000);
+    
+    return () => {
+      isMounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
 
   const canSearch = useMemo(() => norm(lotInput).length > 0 && !loading, [lotInput, loading]);
 
@@ -3186,12 +2886,10 @@ export default function IssueStitching() {
     if (matrix && !alreadyIssued) {
       const generatePdfBackground = async () => {
         try {
-          // console.log('Starting background PDF generation...');
           await generateIssuePdfBlob(matrix, { 
             issueDate: todayLocalISO(), 
             supervisor: '' 
           });
-          // console.log('Background PDF generation completed');
         } catch (err) {
           console.warn('Background PDF generation failed:', err);
         }
@@ -3200,100 +2898,79 @@ export default function IssueStitching() {
       generatePdfBackground();
     }
   }, [matrix, alreadyIssued]);
-// In your useEffect where you fetch pending data:
-useEffect(() => {
-  const fetchPendingData = async () => {
-    if (supervisor && showIssueDialog && matrix?.lotNumber) {
-      console.log('🔄 Fetching pending data for supervisor:', supervisor, 'and lot:', matrix.lotNumber);
-      const data = await fetchPendingLotsForSupervisor(supervisor, abortRef.current?.signal, matrix.lotNumber);
-      setPendingData(data);
-      console.log('📊 Pending data fetched:', {
-        pendingLots: data.pendingLots,
-        pendingPcs: data.pendingPcs,
-        zipOrderDate: data.zipOrderDate
-      });
+  
+  // Fetch pending data when supervisor is selected
+  useEffect(() => {
+    const fetchPendingData = async () => {
+      if (supervisor && showIssueDialog && matrix?.lotNumber) {
+        console.log('🔄 Fetching pending data for supervisor:', supervisor, 'and lot:', matrix.lotNumber);
+        const data = await fetchPendingLotsForSupervisor(supervisor, abortRef.current?.signal, matrix.lotNumber);
+        setPendingData(data);
+        console.log('📊 Pending data fetched:', {
+          pendingLots: data.pendingLots,
+          pendingPcs: data.pendingPcs,
+          zipOrderDate: data.zipOrderDate
+        });
+      }
+    };
+
+    const timeoutId = setTimeout(fetchPendingData, 500);
+    return () => clearTimeout(timeoutId);
+  }, [supervisor, showIssueDialog, matrix?.lotNumber]);
+
+  // OPTIMIZED SEARCH WITH CACHE
+  const handleSearch = async (e) => {
+    e?.preventDefault?.();
+    if (!canSearch) return;
+
+    setError('');
+    setMatrix(null);
+    setPreGeneratedPdf(null);
+    setSubmissionStatus('');
+    setAlreadyIssued(false);
+    setLoading(true);
+
+    abortRef.current?.abort?.();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const issueCacheKey = generateIssueStatusCacheKey(lotInput);
+      issueStatusCache.delete(issueCacheKey);
+      
+      const cacheKey = generateLotMatrixCacheKey(lotInput);
+      const cachedMatrix = lotMatrixCache.get(cacheKey);
+      
+      if (cachedMatrix) {
+        setMatrix(cachedMatrix);
+        const isIssued = await isLotAlreadyIssued(cachedMatrix.lotNumber, ctrl.signal);
+        setAlreadyIssued(isIssued);
+        
+        if (isIssued) {
+          const errorMsg = `❌ Lot ${cachedMatrix.lotNumber} is already issued. Cannot re-issue.`;
+          console.log(errorMsg);
+          setError(errorMsg);
+        }
+      } else {
+        const data = await fetchLotMatrixViaSheetsApi(norm(lotInput), ctrl.signal);
+        setMatrix(data);
+        const isIssued = await isLotAlreadyIssued(data.lotNumber, ctrl.signal);
+        setAlreadyIssued(isIssued);
+        
+        if (isIssued) {
+          const errorMsg = `❌ Lot ${data.lotNumber} is already issued. Cannot re-issue.`;
+          console.log(errorMsg);
+          setError(errorMsg);
+        }
+      }
+    } catch (err) {
+      console.error('❌ Search error:', err);
+      setError(err?.message || "Failed to fetch data.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const timeoutId = setTimeout(fetchPendingData, 500);
-  
-  return () => clearTimeout(timeoutId);
-}, [supervisor, showIssueDialog, matrix?.lotNumber]);
-
-  // OPTIMIZED SEARCH WITH CACHE
-const handleSearch = async (e) => {
-  e?.preventDefault?.();
-  if (!canSearch) return;
-
-  setError('');
-  setMatrix(null);
-  setPreGeneratedPdf(null);
-  setSubmissionStatus('');
-  setAlreadyIssued(false); // Reset this state
-  setLoading(true);
-
-  abortRef.current?.abort?.();
-  const ctrl = new AbortController();
-  abortRef.current = ctrl;
-
-  try {
-    // console.log('🔎 Starting search for lot:', lotInput);
-    
-    // Clear the issue status cache for this lot to force fresh check
-    const issueCacheKey = generateIssueStatusCacheKey(lotInput);
-    issueStatusCache.delete(issueCacheKey);
-    // console.log('🗑️ Cleared issue status cache for:', lotInput);
-    
-    // Check cache first for lot matrix
-    const cacheKey = generateLotMatrixCacheKey(lotInput);
-    const cachedMatrix = lotMatrixCache.get(cacheKey);
-    
-    if (cachedMatrix) {
-      // console.log('🚀 Using cached lot matrix:', cachedMatrix.lotNumber);
-      setMatrix(cachedMatrix);
-      
-      // Check issue status using the dedicated function
-      // console.log('📋 Checking if lot is already issued...');
-      const isIssued = await isLotAlreadyIssued(cachedMatrix.lotNumber, ctrl.signal);
-      // console.log('📋 Issue status result:', isIssued);
-      setAlreadyIssued(isIssued);
-      
-      if (isIssued) {
-        const errorMsg = `❌ Lot ${cachedMatrix.lotNumber} is already issued (has Date of Issue OR Supervisor). Cannot re-issue.`;
-        console.log(errorMsg);
-        setError(errorMsg);
-      } else {
-        // console.log('✅ Lot is available for issuing');
-      }
-    } else {
-      // Fetch fresh data
-      // console.log('🔄 Fetching fresh lot matrix data...');
-      const data = await fetchLotMatrixViaSheetsApi(norm(lotInput), ctrl.signal);
-      // console.log('🔄 Fresh data received:', data.lotNumber);
-      setMatrix(data);
-
-      // Check issue status using the dedicated function
-      // console.log('📋 Checking if lot is already issued...');
-      const isIssued = await isLotAlreadyIssued(data.lotNumber, ctrl.signal);
-      // console.log('📋 Issue status result:', isIssued);
-      setAlreadyIssued(isIssued);
-      
-      if (isIssued) {
-        const errorMsg = `❌ Lot ${data.lotNumber} is already issued (has Date of Issue OR Supervisor). Cannot re-issue.`;
-        console.log(errorMsg);
-        setError(errorMsg);
-      } else {
-        // console.log('✅ Lot is available for issuing');
-      }
-    }
-  } catch (err) {
-    console.error('❌ Search error:', err);
-    setError(err?.message || "Failed to fetch data.");
-  } finally {
-    setLoading(false);
-  }
-};
-  // Clear cache when explicitly resetting
   const handleClear = () => {
     setLotInput('');
     setMatrix(null);
@@ -3308,219 +2985,172 @@ const handleSearch = async (e) => {
     else window.close?.();
   };
 
-const openIssueDialog = () => {
-  // console.log('🔄 Opening issue dialog, alreadyIssued state:', alreadyIssued);
-  
-  // Check if lot is already issued before opening dialog
-  if (alreadyIssued) {
-    const errorMsg = `This lot ${matrix?.lotNumber} is already issued and cannot be re-issued.`;
-    // console.log('❌ Blocked dialog opening:', errorMsg);
-    setError(errorMsg);
-    return;
-  }
-  
-  if (!matrix) {
-    setError("No lot data available. Please search for a lot first.");
-    return;
-  }
-  
-  // console.log('✅ Opening issue dialog for lot:', matrix.lotNumber);
-  setDialogError('');
-  setSupervisor('');
-  setAttendanceCount(''); // Reset attendance count
-  setIssueDate(todayLocalISO());
-  setSubmissionStatus('');
-  setShowIssueDialog(true);
-};
+  const openIssueDialog = () => {
+    if (alreadyIssued) {
+      const errorMsg = `This lot ${matrix?.lotNumber} is already issued and cannot be re-issued.`;
+      setError(errorMsg);
+      return;
+    }
+    
+    if (!matrix) {
+      setError("No lot data available. Please search for a lot first.");
+      return;
+    }
+    
+    setDialogError('');
+    setSupervisor('');
+    setAttendanceCount('');
+    setIssueDate(todayLocalISO());
+    setSubmissionStatus('');
+    setShowIssueDialog(true);
+  };
 
   const closeIssueDialog = () => {
     if (confirming) return;
     setShowIssueDialog(false);
   };
 
-  // Clear cache for this lot when it's issued
-// Enhanced submission handler with timeout handling
-const handleConfirmIssue = async () => {
-  if (!norm(supervisor)) { 
-    setDialogError('Supervisor is required.'); 
-    return; 
-  }
-  if (!attendanceCount || parseInt(attendanceCount) <= 0) {
-    setDialogError('Please enter a valid attendance count (minimum 1).');
-    return;
-  }
-  
-  setDialogError('');
-  setConfirming(true);
-  setSubmissionStatus('submitting');
-
-  try {
-    const totalQty = matrix?.totals?.grand || 0;
-    
-    // Check if this is an OLD lot
-    if (matrix?.source === 'old') {
-      // console.log('📝 [OLD LOT ISSUE] Detected old lot, storing with supervisor:', supervisor);
-      
-      // Use the pre-prepared payload from fetchOldLotsFor
-      const payload = matrix._payloadForIssue || {
-        meta: {
-          issueDate: issueDate,
-          supervisor: supervisor,
-          sourceType: 'old',
-          lotNumber: matrix.lotNumber,
-          style: matrix.style || '',
-          fabric: matrix.fabric || '',
-          garmentType: matrix.garmentType || ''
-        },
-        shades: matrix.rows.map(row => row.color),
-        sizes: [],
-        cells: {},
-        cutting: matrix.rows.reduce((acc, row) => {
-          acc[row.color] = row.cuttingTable || '';
-          return acc;
-        }, {}),
-        rowTotals: matrix.rows.reduce((acc, row) => {
-          acc[row.color] = row.totalPcs;
-          return acc;
-        }, {})
-      };
-      
-      // Update the payload with actual supervisor and date
-      payload.meta.supervisor = supervisor;
-      payload.meta.issueDate = issueDate;
-      
-      // console.log('📤 [OLD LOT ISSUE] Sending to Apps Script:', payload);
-      
-      // Send to your OLD_APPS_SCRIPT_URL
-      const formData = new URLSearchParams();
-      formData.append('payload', JSON.stringify(payload));
-      
-      await fetch(OLD_APPS_SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: formData.toString()
-      });
-      
-      // console.log('✅ [OLD LOT ISSUE] Data sent to Apps Script');
-      
-    } else {
-      // Handle NEW lots (your existing code)
-      // console.log('📝 [NEW LOT ISSUE] Detected new lot');
-      
-      const url = new URL('https://script.google.com/macros/s/AKfycbz9ofgmid-74YQ61oRUN6d4crBlF5FfG5qjeXDg2bUoLoZ7eBWkRVx58t4UzfNODuuzfA/exec');
-      
-      const params = {
-        action: 'issue',
-        lot: matrix.lotNumber,
-        supervisor: supervisor,
-        issueDate: issueDate,
-        manpower: attendanceCount,
-        stitchingIssueQty: totalQty,
-        pendingLots: pendingData.pendingLots,
-        pendingPcs: pendingData.pendingPcs
-      };
-      
-      Object.entries(params).forEach(([key, value]) => {
-        url.searchParams.append(key, value);
-      });
-
-      // console.log('🚀 [NEW LOT] Submitting to main Apps Script:', params);
-      
-      await fetch(url, {
-        method: 'GET',
-        mode: 'no-cors'
-      });
-      
-      // console.log('✅ [NEW LOT] GET request sent');
+  const handleConfirmIssue = async () => {
+    if (!norm(supervisor)) { 
+      setDialogError('Supervisor is required.'); 
+      return; 
     }
-        
-    // Generate PDF with garment type summary (for display only)
-   setSubmissionStatus('generating');
+    if (!attendanceCount || parseInt(attendanceCount) <= 0) {
+      setDialogError('Please enter a valid attendance count (minimum 1).');
+      return;
+    }
+    
+    setDialogError('');
+    setConfirming(true);
+    setSubmissionStatus('submitting');
+
     try {
-      console.log('📄 Generating PDF with garment type data:', {
-        supervisor,
-        pendingLots: pendingData.pendingLots,
-        pendingPcs: pendingData.pendingPcs,
-        garmentTypes: pendingData.garmentTypeSummary.length
-      });
+      const totalQty = matrix?.totals?.grand || 0;
       
-    await generateIssuePdf(matrix, { 
-    issueDate, 
-    supervisor, 
-    manpower: attendanceCount || '0',
-    pendingLots: pendingData.pendingLots || 0,
-    pendingPcs: pendingData.pendingPcs || 0,
-    garmentTypeSummary: pendingData.garmentTypeSummary || [],
-    zipOrderDate: pendingData.zipOrderDate || ''  // Add this line
-  });
-      // console.log('✅ PDF generated with garment type summary');
-    } catch (pdfError) {
-      console.warn('⚠️ PDF generation warning:', pdfError);
-    }
+      if (matrix?.source === 'old') {
+        const payload = matrix._payloadForIssue || {
+          meta: {
+            issueDate: issueDate,
+            supervisor: supervisor,
+            sourceType: 'old',
+            lotNumber: matrix.lotNumber,
+            style: matrix.style || '',
+            fabric: matrix.fabric || '',
+            garmentType: matrix.garmentType || ''
+          },
+          shades: matrix.rows.map(row => row.color),
+          sizes: [],
+          cells: {},
+          cutting: matrix.rows.reduce((acc, row) => {
+            acc[row.color] = row.cuttingTable || '';
+            return acc;
+          }, {}),
+          rowTotals: matrix.rows.reduce((acc, row) => {
+            acc[row.color] = row.totalPcs;
+            return acc;
+          }, {})
+        };
+        
+        payload.meta.supervisor = supervisor;
+        payload.meta.issueDate = issueDate;
+        
+        const formData = new URLSearchParams();
+        formData.append('payload', JSON.stringify(payload));
+        
+        await fetch(OLD_APPS_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: formData.toString()
+        });
+      } else {
+        const url = new URL('https://script.google.com/macros/s/AKfycbz9ofgmid-74YQ61oRUN6d4crBlF5FfG5qjeXDg2bUoLoZ7eBWkRVx58t4UzfNODuuzfA/exec');
+        
+        const params = {
+          action: 'issue',
+          lot: matrix.lotNumber,
+          supervisor: supervisor,
+          issueDate: issueDate,
+          manpower: attendanceCount,
+          stitchingIssueQty: totalQty,
+          pendingLots: pendingData.pendingLots,
+          pendingPcs: pendingData.pendingPcs
+        };
+        
+        Object.entries(params).forEach(([key, value]) => {
+          url.searchParams.append(key, value);
+        });
+        
+        await fetch(url, {
+          method: 'GET',
+          mode: 'no-cors'
+        });
+      }
+          
+      setSubmissionStatus('generating');
+      try {
+        await generateIssuePdf(matrix, { 
+          issueDate, 
+          supervisor, 
+          manpower: attendanceCount || '0',
+          pendingLots: pendingData.pendingLots || 0,
+          pendingPcs: pendingData.pendingPcs || 0,
+          garmentTypeSummary: pendingData.garmentTypeSummary || [],
+          zipOrderDate: pendingData.zipOrderDate || ''
+        });
+      } catch (pdfError) {
+        console.warn('⚠️ PDF generation warning:', pdfError);
+      }
 
+      setSubmissionStatus('success');
+      setAttendanceCount('');
+      
+      const issueCacheKey = generateIssueStatusCacheKey(matrix.lotNumber);
+      issueStatusCache.delete(issueCacheKey);
+      
+      const matrixCacheKey = generateLotMatrixCacheKey(matrix.lotNumber);
+      lotMatrixCache.delete(matrixCacheKey);
+      
+      setTimeout(() => {
+        setShowIssueDialog(false);
+        setSubmissionStatus('');
+        setConfirming(false);
+        setAlreadyIssued(true);
+        setError(`✅ Lot ${matrix.lotNumber} issued to ${supervisor}.`);
+        
+        setTimeout(() => {
+          if (lotInput) {
+            handleSearch({ preventDefault: () => {} });
+          }
+        }, 1000);
+      }, 1500);
 
-    // Success
-    setSubmissionStatus('success');
-    addSupervisorToOptions(supervisor);
-    
-    // Clear attendance count
-    setAttendanceCount('');
-    
-    // Clear caches
-    const issueCacheKey = generateIssueStatusCacheKey(matrix.lotNumber);
-    issueStatusCache.delete(issueCacheKey);
-    
-    const matrixCacheKey = generateLotMatrixCacheKey(matrix.lotNumber);
-    lotMatrixCache.delete(matrixCacheKey);
-    
-    // Close dialog after delay
-    setTimeout(() => {
-      setShowIssueDialog(false);
-      setSubmissionStatus('');
+    } catch (e) {
+      console.error('❌ Error:', e);
+      setSubmissionStatus('error');
+      setDialogError('Data submitted and PDF generated. Please check your sheet.');
       setConfirming(false);
       
-      // Update UI
-      setAlreadyIssued(true);
-      setError(`✅ Lot ${matrix.lotNumber} issued to ${supervisor}.`);
-      
-      // Refresh data
-      setTimeout(() => {
-        if (lotInput) {
-          handleSearch({ preventDefault: () => {} });
-        }
-      }, 1000);
-      
-    }, 1500);
-
-  } catch (e) {
-    console.error('❌ Error:', e);
-    setSubmissionStatus('error');
-    setDialogError('Data submitted and PDF generated. Please check your sheet.');
-    setConfirming(false);
-    
-    // Still generate PDF with available data
-     try {
-      await generateIssuePdf(matrix, { 
-        issueDate, 
-        supervisor,
-        manpower: attendanceCount || '0',
-        pendingLots: 0,
-        pendingPcs: 0,
-        garmentTypeSummary: [] // Empty array if error
-      });
-    } catch (pdfError) {
-      console.error('PDF generation failed:', pdfError);
+      try {
+        await generateIssuePdf(matrix, { 
+          issueDate, 
+          supervisor,
+          manpower: attendanceCount || '0',
+          pendingLots: 0,
+          pendingPcs: 0,
+          garmentTypeSummary: []
+        });
+      } catch (pdfError) {
+        console.error('PDF generation failed:', pdfError);
+      }
     }
-  }
-};
+  };
 
   const generateIssuePdfBlob = async (matrix, { issueDate, supervisor }) => {
     return new Promise((resolve) => {
       setTimeout(() => {
-        // console.log('PDF pre-generation complete');
         resolve('pdf-blob-placeholder');
       }, 1000);
     });
@@ -3533,33 +3163,9 @@ const handleConfirmIssue = async () => {
       : (matrix.sizes || []);
   }, [matrix]);
 
-  const columns = useMemo(
-    () => (matrix ? ['Color', 'Cutting Table', ...displaySizes, 'Total Pcs'] : []),
-    [matrix, displaySizes]
-  );
-
-  const getStatusMessage = () => {
-    switch (submissionStatus) {
-      case 'submitting':
-        return 'Starting submission process...';
-      case 'submitting_data':
-        return 'Storing data in Google Sheets... (This may take a moment)';
-      case 'generating_pdf':
-        return 'Generating PDF document...';
-      case 'success':
-        return '✅ Success! Data submitted and PDF generated.';
-      case 'error':
-        return '⚠️ PDF generated. Please check sheet for data submission.';
-      default:
-        return '';
-    }
-  };
-
   return (
-     <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider value={{ language, setLanguage, t }}>
       <Wrap>
-        {/* Language Toggle Button */}
-       
         <HeaderPaper>
           <TitleSection>
             <TitleIcon><FiScissors /></TitleIcon>
@@ -3599,18 +3205,18 @@ const handleConfirmIssue = async () => {
                 <GhostBtn as={motion.button} type="button" onClick={handleClear} whileTap={{ scale: 0.98 }}>
                   <FiRefreshCw /> {t.reset}
                 </GhostBtn>
-                <LanguageBtn 
-    as={motion.button}
-    type="button"
-    onClick={toggleLanguage}
-    whileTap={{ scale: 0.98 }}
-    $isHindi={language === 'hi'}
-    title={language === 'en' ? 'Switch to Hindi' : 'Switch to English'}
-  >
-    <FiGlobe /> 
-    {language === 'en' ? 'हिंदी' : 'English'}
-  </LanguageBtn>
                 
+                <LanguageBtn 
+                  as={motion.button}
+                  type="button"
+                  onClick={toggleLanguage}
+                  whileTap={{ scale: 0.98 }}
+                  $isHindi={language === 'hi'}
+                  title={language === 'en' ? 'Switch to Hindi' : 'Switch to English'}
+                >
+                  <FiGlobe /> 
+                  {language === 'en' ? 'हिंदी' : 'English'}
+                </LanguageBtn>
               </BtnRow>
             </Form>
           </SearchSection>
@@ -3673,44 +3279,44 @@ const handleConfirmIssue = async () => {
             <TablePanel>
               <PanelHeader><FiGrid /><h3>{t.cuttingMatrix}</h3></PanelHeader>
               <TableContainer>
-               <Table>
-  <thead>
-    <tr>
-      <th>{t.color}</th>
-      <th>{t.cuttingTable}</th>
-      {displaySizes.map((s, i) => (
-        <th key={`${s || 'size'}-${i}`}>{s || '\u00A0'}</th>
-      ))}
-      <th>{t.totalPcs}</th>
-    </tr>
-  </thead>
-  <tbody>
-    {matrix.rows.map((r, idx) => (
-      <tr key={idx}>
-        <td>{r.color}</td>
-        <td className="num">{r.cuttingTable ?? ''}</td>
-        {displaySizes.map((s, i) => (
-          <td key={`${r.color}-${s || 'size'}-${i}`} className="num">
-            {r.sizes?.[s] ?? ''}
-          </td>
-        ))}
-        <td className="num strong">{r.totalPcs ?? ''}</td>
-      </tr>
-    ))}
-  </tbody>
-  <tfoot>
-    <tr>
-      <td className="strong">{t.total}</td>
-      <td className="num">—</td>
-      {displaySizes.map((s, i) => (
-        <td key={`total-${s || 'size'}-${i}`} className="num strong">
-          {matrix.totals.perSize?.[s] ?? 0}
-        </td>
-      ))}
-      <td className="num strong">{matrix.totals.grand}</td>
-    </tr>
-  </tfoot>
-</Table>
+                <Table>
+                  <thead>
+                    <tr>
+                      <th>{t.color}</th>
+                      <th>{t.cuttingTable}</th>
+                      {displaySizes.map((s, i) => (
+                        <th key={`${s || 'size'}-${i}`}>{s || '\u00A0'}</th>
+                      ))}
+                      <th>{t.totalPcs}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrix.rows.map((r, idx) => (
+                      <tr key={idx}>
+                        <td>{r.color}</td>
+                        <td className="num">{r.cuttingTable ?? ''}</td>
+                        {displaySizes.map((s, i) => (
+                          <td key={`${r.color}-${s || 'size'}-${i}`} className="num">
+                            {r.sizes?.[s] ?? ''}
+                          </td>
+                        ))}
+                        <td className="num strong">{r.totalPcs ?? ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td className="strong">{t.total}</td>
+                      <td className="num">—</td>
+                      {displaySizes.map((s, i) => (
+                        <td key={`total-${s || 'size'}-${i}`} className="num strong">
+                          {matrix.totals.perSize?.[s] ?? 0}
+                        </td>
+                      ))}
+                      <td className="num strong">{matrix.totals.grand}</td>
+                    </tr>
+                  </tfoot>
+                </Table>
               </TableContainer>
             </TablePanel>
           </ContentGrid>
@@ -3720,7 +3326,7 @@ const handleConfirmIssue = async () => {
               <HintCard>
                 <FiInfo />
                 <span>
-                  {t.tip} <code>Cutting Matrix — Lot 64003</code> {t.or} <code>Cutting Matrix - Lot 64003</code>. {t.willFind}
+                  {t.tip} <code>Cutting Matrix — Lot 64003</code> {t.or} <code>Cutting Matrix - Lot 64003</code>.
                 </span>
               </HintCard>
 
@@ -3805,27 +3411,19 @@ const handleConfirmIssue = async () => {
                   </TipsHeader>
                   <TipItem>
                     <div className="tip-bullet">•</div>
-                    <div className="tip-text">
-                      {t.tip1}
-                    </div>
+                    <div className="tip-text">{t.tip1}</div>
                   </TipItem>
                   <TipItem>
                     <div className="tip-bullet">•</div>
-                    <div className="tip-text">
-                      {t.tip2}
-                    </div>
+                    <div className="tip-text">{t.tip2}</div>
                   </TipItem>
                   <TipItem>
                     <div className="tip-bullet">•</div>
-                    <div className="tip-text">
-                      {t.tip3}
-                    </div>
+                    <div className="tip-text">{t.tip3}</div>
                   </TipItem>
                   <TipItem>
                     <div className="tip-bullet">•</div>
-                    <div className="tip-text">
-                      {t.tip4}
-                    </div>
+                    <div className="tip-text">{t.tip4}</div>
                   </TipItem>
                 </QuickTips>
               </InstructionsSection>
@@ -3833,7 +3431,7 @@ const handleConfirmIssue = async () => {
           )
         )}
 
-        {/* Dialog with translations */}
+        {/* Dialog with Supervisor Dropdown from Google Sheet */}
         {showIssueDialog && (
           <DialogOverlay onClick={closeIssueDialog}>
             <DialogContainer onClick={(e) => e.stopPropagation()}>
@@ -3844,149 +3442,173 @@ const handleConfirmIssue = async () => {
                 </CloseButton>
               </DialogHeader>
 
-           <DialogContent>
-  <SimpleField>
-    <FieldLabel><FiCalendar /> {t.dateOfIssue}</FieldLabel>
-    <input 
-      type="date" 
-      value={issueDate} 
-      onChange={(e) => setIssueDate(e.target.value)}
-      disabled={confirming}
-    />
-  </SimpleField>
-  {/* Display pending lots info */}
-{supervisor && (
-  <SimpleField>
-    <FieldLabel>
-      <FiAlertTriangle /> {t.pendingWork}
-    </FieldLabel>
-    <input
-      type="text"
-      value={`${pendingData.pendingLots} lots pending (${pendingData.pendingPcs} pcs)`}
-      disabled
-      readOnly
-      style={{
-        background: pendingData.pendingLots > 0 ? '#fff7ed' : '#f0f9ff',
-        color: pendingData.pendingLots > 0 ? '#9a3412' : '#075985',
-        fontWeight: 'bold',
-        cursor: 'default',
-        borderColor: pendingData.pendingLots > 0 ? '#fdba74' : '#7dd3fc'
-      }}
-    />
-  </SimpleField>
-)}
+              <DialogContent>
+                <SimpleField>
+                  <FieldLabel><FiCalendar /> {t.dateOfIssue}</FieldLabel>
+                  <input 
+                    type="date" 
+                    value={issueDate} 
+                    onChange={(e) => setIssueDate(e.target.value)}
+                    disabled={confirming}
+                  />
+                </SimpleField>
 
-  <SimpleField>
-    <FieldLabel><FiUser /> {t.supervisor}</FieldLabel>
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
-      <input
-        list="supervisorList"
-        placeholder={t.supervisor}
-        value={supervisor}
-        onChange={(e) => setSupervisor(titleCase(e.target.value))}
-        disabled={confirming}
-      />
-      {typedIsNewSupervisor && !confirming && (
-        <AddButton
-          type="button"
-          onClick={() => addSupervisorToOptions(supervisor)}
-          title={t.add}
-        >
-          + {t.add}
-        </AddButton>
-      )}
-    </div>
-    <datalist id="supervisorList">
-      {supervisorOptions.map((name) => (
-        <option key={name} value={name} />
-      ))}
-    </datalist>
-  </SimpleField>
+                {supervisor && (
+                  <SimpleField>
+                    <FieldLabel>
+                      <FiAlertTriangle /> Pending Work
+                    </FieldLabel>
+                    <input
+                      type="text"
+                      value={`${pendingData.pendingLots} lots pending (${pendingData.pendingPcs} pcs)`}
+                      disabled
+                      readOnly
+                      style={{
+                        background: pendingData.pendingLots > 0 ? '#fff7ed' : '#f0f9ff',
+                        color: pendingData.pendingLots > 0 ? '#9a3412' : '#075985',
+                        fontWeight: 'bold',
+                        cursor: 'default',
+                        borderColor: pendingData.pendingLots > 0 ? '#fdba74' : '#7dd3fc'
+                      }}
+                    />
+                  </SimpleField>
+                )}
 
-  {/* Add Daily Attendance Field */}
- <SimpleField>
-  <FieldLabel>
-    <FiUsers /> Manpower (Daily Attendance)
-  </FieldLabel>
-  <input
-    type="number"
-    min="1"
-    placeholder="Enter number of persons"
-    value={attendanceCount}
-    onChange={(e) => {
-      const value = e.target.value;
-      // Allow only positive numbers
-      if (value === '' || (/^\d+$/.test(value) && parseInt(value) >= 1)) {
-        setAttendanceCount(value);
-      }
-    }}
-    disabled={confirming}
-  />
-</SimpleField>
+                <SimpleField>
+                  <FieldLabel>
+                    <FiUser /> {t.supervisor}
+                    <span style={{ fontSize: '0.75rem', color: '#059669', marginLeft: '8px' }}>
+                      (Stitching Department Only)
+                    </span>
+                  </FieldLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
+                    <select
+                      value={supervisor}
+                      onChange={(e) => setSupervisor(e.target.value)}
+                      disabled={confirming || loadingSupervisors}
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: '12px',
+                        border: '2px solid #e2e8f0',
+                        background: 'white',
+                        color: '#1e293b',
+                        outline: 'none',
+                        fontSize: '1rem',
+                        cursor: loadingSupervisors ? 'wait' : 'pointer',
+                        width: '100%'
+                      }}
+                    >
+                      <option value="">-- Select Supervisor (Stitching Dept) --</option>
+                      {supervisorOptions.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    
+                    {loadingSupervisors && (
+                      <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0' }}>
+                        <Spinner size="14px" /> Loading supervisors from sheet...
+                      </div>
+                    )}
+                    
+                    {!loadingSupervisors && supervisorOptions.length === 0 && (
+                      <div style={{ fontSize: '0.85rem', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0' }}>
+                        <FiAlertTriangle /> No stitching supervisors found. Please check sheet.
+                      </div>
+                    )}
+                    
+                    {!loadingSupervisors && supervisorOptions.length > 0 && (
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
+                        <FiCheck style={{ color: '#10b981' }} /> 
+                        {supervisorOptions.length} supervisor(s) loaded from sheet
+                      </div>
+                    )}
+                  </div>
+                </SimpleField>
 
-<SimpleField>
-  <FieldLabel>
-    <FiPackage /> Stitching Issue Quantity
-  </FieldLabel>
-  <input
-    type="text"
-    value={matrix?.totals?.grand || 0}
-    disabled
-    readOnly
-    style={{
-      background: '#f8fafc',
-      color: '#1e293b',
-      fontWeight: 'bold',
-      cursor: 'default'
-    }}
-  />
-</SimpleField>
-  {/* Progress indicator */}
-  {submissionStatus && (
-    <div style={{ margin: '20px 0', padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-        <Spinner size="16px" trackColor="#e2e8f0" spinColor="#8b5cf6" />
-        <span style={{ fontWeight: '600', color: '#1e293b' }}>
-          {submissionStatus === 'submitting' && 'Preparing submission...'}
-          {submissionStatus === 'saving' && 'Saving to Sheets...'}
-          {submissionStatus === 'generating' && 'Generating PDF...'}
-          {submissionStatus === 'success' && '✅ Success! Data submitted and PDF generated.'}
-          {submissionStatus === 'error' && '❌ Error occurred'}
-        </span>
-      </div>
-      {submissionStatus === 'error' && (
-        <div style={{ color: '#dc2626', fontSize: '0.9rem', marginTop: '10px' }}>
-          {dialogError}
-        </div>
-      )}
-    </div>
-  )}
+                <SimpleField>
+                  <FieldLabel>
+                    <FiUsers /> Manpower (Daily Attendance)
+                  </FieldLabel>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Enter number of persons"
+                    value={attendanceCount}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || (/^\d+$/.test(value) && parseInt(value) >= 1)) {
+                        setAttendanceCount(value);
+                      }
+                    }}
+                    disabled={confirming}
+                  />
+                </SimpleField>
 
-  <DialogActions>
-    <SimpleGhostBtn 
-      type="button" 
-      onClick={closeIssueDialog} 
-      disabled={confirming}
-    >
-      {t.cancel}
-    </SimpleGhostBtn>
-    <SimplePrimaryBtn 
-      type="button" 
-      onClick={handleConfirmIssue} 
-      disabled={confirming} 
-    >
-      {confirming ? (
-        <>
-          <Spinner size="16px" spinColor="white" /> {t.processing}
-        </>
-      ) : (
-        <>
-          <FiCheck /> {t.confirmIssue}
-        </>
-      )}
-    </SimplePrimaryBtn>
-  </DialogActions>
-</DialogContent>
+                <SimpleField>
+                  <FieldLabel>
+                    <FiPackage /> Stitching Issue Quantity
+                  </FieldLabel>
+                  <input
+                    type="text"
+                    value={matrix?.totals?.grand || 0}
+                    disabled
+                    readOnly
+                    style={{
+                      background: '#f8fafc',
+                      color: '#1e293b',
+                      fontWeight: 'bold',
+                      cursor: 'default'
+                    }}
+                  />
+                </SimpleField>
+
+                {submissionStatus && (
+                  <div style={{ margin: '20px 0', padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                      <Spinner size="16px" trackColor="#e2e8f0" spinColor="#8b5cf6" />
+                      <span style={{ fontWeight: '600', color: '#1e293b' }}>
+                        {submissionStatus === 'submitting' && 'Preparing submission...'}
+                        {submissionStatus === 'saving' && 'Saving to Sheets...'}
+                        {submissionStatus === 'generating' && 'Generating PDF...'}
+                        {submissionStatus === 'success' && '✅ Success! Data submitted and PDF generated.'}
+                        {submissionStatus === 'error' && '❌ Error occurred'}
+                      </span>
+                    </div>
+                    {submissionStatus === 'error' && (
+                      <div style={{ color: '#dc2626', fontSize: '0.9rem', marginTop: '10px' }}>
+                        {dialogError}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <DialogActions>
+                  <SimpleGhostBtn 
+                    type="button" 
+                    onClick={closeIssueDialog} 
+                    disabled={confirming}
+                  >
+                    {t.cancel}
+                  </SimpleGhostBtn>
+                  <SimplePrimaryBtn 
+                    type="button" 
+                    onClick={handleConfirmIssue} 
+                    disabled={confirming} 
+                  >
+                    {confirming ? (
+                      <>
+                        <Spinner size="16px" spinColor="white" /> {t.processing}
+                      </>
+                    ) : (
+                      <>
+                        <FiCheck /> {t.confirmIssue}
+                      </>
+                    )}
+                  </SimplePrimaryBtn>
+                </DialogActions>
+              </DialogContent>
             </DialogContainer>
           </DialogOverlay>
         )}

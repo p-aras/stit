@@ -1,7 +1,7 @@
 // src/Welcome.js
 import React, { useEffect, useMemo, useState } from "react";
 
-// Stitching Supervisor specific navigation
+// Stitching Supervisor specific navigation (same data, enhanced)
 const STITCHING_SUPERVISOR_OPTIONS = [
   {
     id: "daily-report",
@@ -119,7 +119,6 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Manage customer alteration requirements"
     ]
   },
-  // Palla Job Order Card
   {
     id: "palla-job-order",
     label: "Palla Job Order",
@@ -136,7 +135,6 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Monitor palla completion status and delivery schedules"
     ]
   },
-    // Extra Pcs Card - Add this after the Create Payable card
   {
     id: "extra-pcs",
     label: "Extra Pcs",
@@ -153,7 +151,6 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Handle special requests and sample piece management"
     ]
   },
-  // Create Karigar Profile Card
   {
     id: "create-karigar-profile",
     label: "Create Karigar Profile",
@@ -169,7 +166,6 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Track experience and expertise levels"
     ]
   },
-  // Enter Karigar Details Card
   {
     id: "enter-karigar-details",
     label: "Enter Karigar Details",
@@ -185,7 +181,6 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Monitor individual karigar performance"
     ]
   },
-  // Update Completion Status of Lots as Per Karigar
   {
     id: "update-lot-completion",
     label: "Update Lot Completion",
@@ -201,7 +196,6 @@ const STITCHING_SUPERVISOR_OPTIONS = [
       "Generate lot completion reports"
     ]
   },
-  // Create Payable Card
   {
     id: "create-payable",
     label: "Create Payable",
@@ -265,7 +259,6 @@ export default function Welcome({ onNavigate }) {
         setStitchingSupervisors(supervisors);
       } catch (err) {
         console.error("Error fetching supervisors:", err);
-        // Fallback seed users for offline/dev
         setStitchingSupervisors([
           {
             id: "ss1",
@@ -329,7 +322,6 @@ export default function Welcome({ onNavigate }) {
       return;
     }
 
-    // Simulate API call delay
     await new Promise((resolve) => setTimeout(resolve, 800));
 
     if (currentSupervisor && password === currentSupervisor.password) {
@@ -364,10 +356,7 @@ export default function Welcome({ onNavigate }) {
       if (onNavigate) {
         onNavigate(option.component, currentSupervisor);
       } else {
-        console.log(`Navigating to: ${option.label}`, {
-          supervisor: currentSupervisor,
-          component: option.component,
-        });
+        console.log(`Navigating to: ${option.label}`);
       }
     }, 400);
   };
@@ -382,273 +371,224 @@ export default function Welcome({ onNavigate }) {
 
   return (
     <div style={styles.page}>
-      <style>{css}</style>
-
-      {/* Subtle Background */}
-      <div style={styles.background}>
-        <div style={styles.backgroundShape1}></div>
-        <div style={styles.backgroundShape2}></div>
-        <div style={styles.backgroundPattern}></div>
+      <div style={styles.orbBackground}>
+        <div style={styles.orb1}></div>
+        <div style={styles.orb2}></div>
+        <div style={styles.orb3}></div>
       </div>
 
       <div style={{
         ...styles.container,
         ...(isExiting ? styles.containerExiting : {})
       }}>
-        {/* Header - Paper Style */}
         <header style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.logo}>
-              <div style={styles.logoIcon}>
-                <div style={styles.logoIconInner}>🧵</div>
+              <div style={styles.logoMark}>
+                <span style={styles.logoIcon}>🧵</span>
               </div>
-              <div style={styles.logoText}>
-                <span style={styles.logoTitle}>MH STITCHING</span>
-                <span style={styles.logoSubtitle}>Supervisor Portal</span>
+              <div>
+                <h1 style={styles.logoText}>MH Stitching</h1>
+                <p style={styles.logoSub}>Supervisor Portal</p>
               </div>
             </div>
             
             {isAuthenticated && (
-              <div style={styles.userSection}>
-                <div style={styles.userInfo}>
-                  <div
-                    style={{
-                      ...styles.userAvatar,
-                      background: currentSupervisor?.avatarColor,
-                    }}
-                  >
-                    {currentSupervisor?.emoji || "👨‍💼"}
+              <div style={styles.userMenu}>
+                <div style={styles.userProfile}>
+                  <div style={styles.avatarWrapper}>
+                    <div style={{...styles.avatar, background: currentSupervisor?.avatarColor}}>
+                      {currentSupervisor?.emoji || "👨‍💼"}
+                    </div>
+                    <div style={styles.statusDot}></div>
                   </div>
-                  <div style={styles.userDetails}>
+                  <div style={styles.userMeta}>
                     <span style={styles.userName}>{currentSupervisor?.name}</span>
                     <span style={styles.userRole}>Stitching Supervisor</span>
                   </div>
                 </div>
-                <button
-                  style={styles.logoutBtn}
-                  onClick={handleLogout}
-                  className="logout-btn"
-                >
-                  <span>Logout</span>
-                  <svg style={styles.logoutIcon} viewBox="0 0 24 24" fill="none">
-                    <path d="M17 16L21 12M21 12L17 8M21 12H9M9 4H7C5.89543 4 5 4.89543 5 6V18C5 19.1046 5.89543 20 7 20H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <button onClick={handleLogout} style={styles.logoutBtn}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
                   </svg>
+                  <span>Exit</span>
                 </button>
               </div>
             )}
           </div>
         </header>
 
-        {/* Main Content */}
         <main style={styles.main}>
           {!isAuthenticated ? (
-            <div style={{
-              ...styles.authSection,
-              ...(isExiting ? styles.authSectionExiting : {})
-            }}>
+            <div style={styles.authContainer}>
               {sheetLoading ? (
-                <div style={styles.loadingContainer}>
-                  <div style={styles.loadingSpinner}></div>
-                  <p style={styles.loadingText}>
-                    Loading supervisor database...
-                  </p>
+                <div style={styles.loadingCard}>
+                  <div style={styles.loadingRing}></div>
+                  <p style={styles.loadingText}>Loading secure workspace...</p>
                 </div>
               ) : (
                 <div style={styles.authCard}>
-                  <div style={styles.authHeader}>
-                    <div style={styles.authIconContainer}>
-                      <div style={styles.authIcon}>🔐</div>
-                    </div>
-                    <h2 style={styles.authTitle}>Welcome Back</h2>
-                    <p style={styles.authSubtitle}>
-                      Sign in to access your stitching production dashboard
-                    </p>
+                  <div style={styles.authBadge}>
+                    <span>🔐 Secure Access</span>
                   </div>
+                  <h2 style={styles.authTitle}>Welcome back</h2>
+                  <p style={styles.authDesc}>Sign in to manage your stitching operations</p>
 
-                  <form onSubmit={handleLogin} style={styles.loginForm}>
+                  <form onSubmit={handleLogin} style={styles.form}>
                     <div style={styles.inputGroup}>
-                      <label style={styles.inputLabel}>Username</label>
-                      <select
-                        style={styles.select}
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="">Select your name</option>
-                        {stitchingSupervisors.map((s) => (
-                          <option key={s.id} value={s.username}>
-                            {s.name} ({s.username})
-                          </option>
-                        ))}
-                      </select>
+                      <label style={styles.label}>Username</label>
+                      <div style={styles.inputWrapper}>
+                        <span style={styles.inputIcon}>👤</span>
+                        <select
+                          style={styles.select}
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                        >
+                          <option value="">Select your name</option>
+                          {stitchingSupervisors.map((s) => (
+                            <option key={s.id} value={s.username}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
                     <div style={styles.inputGroup}>
-                      <label style={styles.inputLabel}>Password</label>
-                      <div style={styles.passwordContainer}>
+                      <label style={styles.label}>Password</label>
+                      <div style={styles.inputWrapper}>
+                        <span style={styles.inputIcon}>🔒</span>
                         <input
                           type={showPassword ? "text" : "password"}
-                          style={styles.passwordInput}
+                          style={styles.input}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder="Enter your password"
-                          className="form-input"
                         />
                         <button
                           type="button"
-                          style={styles.togglePassword}
-                          onClick={() => setShowPassword((v) => !v)}
-                          className="toggle-password-btn"
+                          onClick={() => setShowPassword(!showPassword)}
+                          style={styles.eyeBtn}
                         >
-                          {showPassword ? "Hide" : "Show"}
+                          {showPassword ? "🙈" : "👁️"}
                         </button>
                       </div>
                     </div>
 
                     {authError && (
-                      <div style={styles.errorMessage}>
-                        <svg style={styles.errorIcon} viewBox="0 0 24 24" fill="none">
-                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
-                          <line x1="12" y1="8" x2="12" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                          <line x1="12" y1="16" x2="12.01" y2="16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                        </svg>
-                        {authError}
+                      <div style={styles.errorAlert}>
+                        <span>⚠️</span> {authError}
                       </div>
                     )}
 
                     <button
                       type="submit"
-                      style={{
-                        ...styles.loginButton,
-                        ...(isLoading ? styles.loginButtonLoading : {})
-                      }}
                       disabled={isLoading}
-                      className="login-button"
+                      style={{...styles.loginBtn, ...(isLoading ? styles.loginBtnLoading : {})}}
                     >
                       {isLoading ? (
-                        <>
-                          <div style={styles.buttonSpinner}></div>
-                          Signing In...
-                        </>
+                        <span style={styles.btnSpinner}></span>
                       ) : (
-                        "Sign In"
+                        "Sign in →"
                       )}
                     </button>
                   </form>
+
+                  <div style={styles.authFooter}>
+                    <span style={styles.authFooterText}>Authorized personnel only</span>
+                  </div>
                 </div>
               )}
             </div>
           ) : (
-            /* Dashboard - Compact Layout */
             <div style={styles.dashboard}>
-              {/* Welcome Header */}
-              <div style={styles.welcomeHeader}>
-                <div style={styles.welcomeContent}>
-                  <h1 style={styles.greeting}>
-                    Good {getTimeBasedGreeting()},{" "}
-                    <span style={styles.userHighlight}>{currentSupervisor?.name}</span>
-                  </h1>
-                  <p style={styles.dashboardSubtitle}>
-                    Manage your production line efficiently with these tools
-                  </p>
-                </div>
-                <div style={styles.statsContainer}>
-                  <div style={styles.statCard}>
-                    <div style={styles.statIcon}>📈</div>
-                    <div style={styles.statContent}>
-                      <span style={styles.statValue}>{STITCHING_SUPERVISOR_OPTIONS.length}</span>
-                      <span style={styles.statLabel}>Tools</span>
+              {/* Hero Banner */}
+              <div style={styles.heroBanner}>
+                <div style={styles.heroContent}>
+                  <div>
+                    <span style={styles.heroGreeting}>Good {getTimeBasedGreeting()},</span>
+                    <h1 style={styles.heroName}>{currentSupervisor?.name}</h1>
+                    <p style={styles.heroDesc}>Your stitching production dashboard is ready</p>
+                  </div>
+                  <div style={styles.heroStats}>
+                    <div style={styles.statPill}>
+                      <span>📋</span> {STITCHING_SUPERVISOR_OPTIONS.length} Tools
+                    </div>
+                    <div style={styles.statPill}>
+                      <span>✅</span> Active Session
                     </div>
                   </div>
                 </div>
+                <div style={styles.heroPattern}></div>
               </div>
 
-              {/* Main Content Grid */}
-              <div style={styles.mainGrid}>
-                {/* Features Grid */}
-                <div style={styles.featuresSection}>
-                  <div style={styles.sectionHeader}>
-                    <h3 style={styles.sectionTitle}>Production Tools</h3>
-                    <p style={styles.sectionDescription}>
-                      Click on any tool to manage your stitching operations
-                    </p>
+              {/* Two Column Layout */}
+              <div style={styles.twoColumn}>
+                {/* Tools Grid */}
+                <div style={styles.toolsColumn}>
+                  <div style={styles.sectionTitleBar}>
+                    <h3>Production Tools</h3>
+                    <span style={styles.sectionBadge}>Interactive</span>
                   </div>
-
                   <div style={styles.grid}>
-                    {STITCHING_SUPERVISOR_OPTIONS.map((option, index) => (
+                    {STITCHING_SUPERVISOR_OPTIONS.map((option, idx) => (
                       <div
                         key={option.id}
-                        style={{
-                          ...styles.card,
-                          animationDelay: `${index * 0.1}s`
-                        }}
+                        style={styles.card}
                         onClick={() => handleNavigation(option)}
                         onMouseEnter={() => handleFeatureHover(option)}
                         onMouseLeave={handleFeatureLeave}
-                        className="feature-card"
                       >
-                        <div style={styles.cardHeader}>
-                          <div 
-                            style={{
-                              ...styles.cardIcon,
-                              background: option.color,
-                            }}
-                          >
-                            {option.emoji}
-                          </div>
-                          <div style={styles.cardArrow}>
-                            <svg viewBox="0 0 24 24" fill="none" style={styles.arrowIcon}>
-                              <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <div style={{...styles.cardGradient, background: option.color}}></div>
+                        <div style={styles.cardContent}>
+                          <div style={styles.cardTop}>
+                            <span style={styles.cardEmoji}>{option.emoji}</span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style={styles.cardArrow}>
+                              <path d="M5 12h14M12 5l7 7-7 7" strokeWidth="2" strokeLinecap="round"/>
                             </svg>
                           </div>
-                        </div>
-                        <div style={styles.cardContent}>
                           <h4 style={styles.cardTitle}>{option.label}</h4>
-                          <p style={styles.cardDescription}>{option.description}</p>
+                          <p style={styles.cardDesc}>{option.description}</p>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Instructions Panel */}
-                <div style={styles.instructionsSection}>
-                  <div style={styles.instructionsCard}>
-                    <div style={styles.instructionsHeader}>
-                      <div style={styles.instructionsIcon}>💡</div>
-                      <h4 style={styles.instructionsTitle}>
-                        {selectedFeature ? `${selectedFeature.label} Guide` : "Quick Guide"}
-                      </h4>
+                {/* Right Panel - Instructions + Status */}
+                <div style={styles.rightColumn}>
+                  <div style={styles.instructionCard}>
+                    <div style={styles.instructionHeader}>
+                      <span style={styles.instructionIcon}>💡</span>
+                      <span style={styles.instructionTitle}>
+                        {selectedFeature ? selectedFeature.label : "Quick Guide"}
+                      </span>
                     </div>
-                    <div style={styles.instructionsContent}>
+                    <div style={styles.instructionBody}>
                       {selectedFeature ? (
-                        <div>
-                          <p style={styles.featureDescription}>
-                            {selectedFeature.description}
-                          </p>
-                          <div style={styles.instructionsList}>
-                            <h5 style={styles.instructionsSubtitle}>What you can do:</h5>
-                            <ul style={styles.instructionsItems}>
-                              {selectedFeature.instructions.map((instruction, index) => (
-                                <li key={index} style={styles.instructionItem}>
-                                  <span style={styles.bullet}>•</span>
-                                  {instruction}
-                                </li>
+                        <>
+                          <p style={styles.featureDesc}>{selectedFeature.description}</p>
+                          <div style={styles.instructionList}>
+                            <strong>What you can do:</strong>
+                            <ul>
+                              {selectedFeature.instructions.map((inst, i) => (
+                                <li key={i}>{inst}</li>
                               ))}
                             </ul>
                           </div>
-                        </div>
+                        </>
                       ) : (
-                        <div style={styles.defaultInstructions}>
-                          <p style={styles.defaultText}>
-                            Hover over any tool to see detailed instructions and features.
-                          </p>
-                          <div style={styles.tips}>
-                            <h5 style={styles.tipsTitle}>Quick Tips:</h5>
-                            <ul style={styles.tipsList}>
-                              <li style={styles.tipItem}>Keep your daily reports updated</li>
-                              <li style={styles.tipItem}>Track material consumption regularly</li>
-                              <li style={styles.tipItem}>Monitor production rates weekly</li>
+                        <div style={styles.emptyInstruction}>
+                          <span style={styles.hintIcon}>✨</span>
+                          <p>Hover over any tool to see detailed instructions and features.</p>
+                          <div style={styles.tipBlock}>
+                            <strong>Pro tips:</strong>
+                            <ul>
+                              <li>Keep daily reports updated</li>
+                              <li>Track material consumption regularly</li>
+                              <li>Monitor production rates weekly</li>
                             </ul>
                           </div>
                         </div>
@@ -656,24 +596,22 @@ export default function Welcome({ onNavigate }) {
                     </div>
                   </div>
 
-                  {/* System Status */}
-                  <div style={styles.systemStatus}>
+                  <div style={styles.statusCard}>
                     <div style={styles.statusHeader}>
-                      <h5 style={styles.statusTitle}>System Status</h5>
-                      <div style={styles.statusIndicator}>
-                        <div style={styles.statusDot}></div>
-                        Online
-                      </div>
+                      <span>🟢 System Status</span>
+                      <span style={styles.statusBadge}>Operational</span>
                     </div>
-                    <div style={styles.statusItems}>
-                      <div style={styles.statusItem}>
-                        <span style={styles.statusLabel}>Last Sync</span>
-                        <span style={styles.statusValue}>Just now</span>
-                      </div>
-                      <div style={styles.statusItem}>
-                        <span style={styles.statusLabel}>Database</span>
-                        <span style={styles.statusValue}>Connected</span>
-                      </div>
+                    <div style={styles.statusRow}>
+                      <span>Last Sync</span>
+                      <span>Just now</span>
+                    </div>
+                    <div style={styles.statusRow}>
+                      <span>Database</span>
+                      <span>Connected</span>
+                    </div>
+                    <div style={styles.statusRow}>
+                      <span>Session</span>
+                      <span>Active</span>
                     </div>
                   </div>
                 </div>
@@ -682,18 +620,12 @@ export default function Welcome({ onNavigate }) {
           )}
         </main>
 
-        {/* Footer */}
         <footer style={styles.footer}>
-          <div style={styles.footerContent}>
-            <div style={styles.footerText}>
-              <span style={styles.footerIcon}>🧵</span>
-              MH STITCHING Supervisor System v2.1
-            </div>
-            <div style={styles.footerLinks}>
-              <span style={styles.footerLink}>Help Center</span>
-              <span style={styles.footerLink}>Support</span>
-              <span style={styles.footerLink}>Privacy</span>
-            </div>
+          <span>© 2025 MH Stitching — Supervisor Portal v2.1</span>
+          <div style={styles.footerLinks}>
+            <a href="#">Help</a>
+            <a href="#">Support</a>
+            <a href="#">Privacy</a>
           </div>
         </footer>
       </div>
@@ -720,233 +652,241 @@ function getColorGradient(index) {
   return gradients[index % gradients.length];
 }
 
-/* ---------- Enhanced Professional Styles ---------- */
+// ===== ENHANCED ELEGANT STYLES =====
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "linear-gradient(135deg, #ffffff 0%, #ffffff 100%)",
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+    background: "#ffffff",
+    fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
     position: "relative",
+    overflowX: "hidden",
+  },
+  orbBackground: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 0,
     overflow: "hidden",
   },
-  background: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 0,
-  },
-  backgroundShape1: {
+  orb1: {
     position: "absolute",
-    top: "-10%",
-    right: "-5%",
-    width: "400px",
-    height: "400px",
+    top: "-20%",
+    right: "-10%",
+    width: "500px",
+    height: "500px",
     borderRadius: "50%",
-    background: "linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.02) 100%)",
+    background: "radial-gradient(circle, rgba(102,126,234,0.12) 0%, rgba(102,126,234,0) 70%)",
+    filter: "blur(60px)",
   },
-  backgroundShape2: {
+  orb2: {
     position: "absolute",
-    bottom: "-10%",
+    bottom: "-15%",
     left: "-5%",
+    width: "450px",
+    height: "450px",
+    borderRadius: "50%",
+    background: "radial-gradient(circle, rgba(245,87,108,0.1) 0%, rgba(245,87,108,0) 70%)",
+    filter: "blur(60px)",
+  },
+  orb3: {
+    position: "absolute",
+    top: "40%",
+    left: "30%",
     width: "300px",
     height: "300px",
     borderRadius: "50%",
-    background: "linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%)",
-  },
-  backgroundPattern: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.03) 1px, transparent 0)`,
-    backgroundSize: "20px 20px",
+    background: "radial-gradient(circle, rgba(67,233,123,0.08) 0%, rgba(67,233,123,0) 70%)",
+    filter: "blur(50px)",
   },
   container: {
     position: "relative",
-    zIndex: 1,
+    zIndex: 2,
+    maxWidth: 2400,
+    margin: "0 auto",
     minHeight: "100vh",
     display: "flex",
     flexDirection: "column",
-    maxWidth: 2200,
-    margin: "0 auto",
-    background: "white",
-    boxShadow: "0 0 0 1px rgba(255, 255, 255, 0.02), 0 4px 6px -1px rgba(255, 255, 255, 0.05)",
-    transition: "all 0.3s ease-out",
+    transition: "all 0.35s cubic-bezier(0.2, 0.9, 0.4, 1.1)",
+    backdropFilter: "blur(2px)",
   },
   containerExiting: {
     opacity: 0,
-    transform: "translateY(10px)",
+    transform: "translateY(12px)",
   },
   header: {
-    background: "white",
-    borderBottom: "1px solid #f1f5f9",
-    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
+    background: "rgba(255,255,255,0.96)",
+    backdropFilter: "blur(20px)",
+    borderBottom: "1px solid rgba(226,232,240,0.8)",
     position: "sticky",
     top: 0,
-    zIndex: 100,
+    zIndex: 50,
   },
   headerContent: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "20px 32px",
-    maxWidth: 2200,
+    padding: "16px 32px",
+    maxWidth: 2400,
     margin: "0 auto",
   },
   logo: {
     display: "flex",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
   },
-  logoIcon: {
-    position: "relative",
-  },
-  logoIconInner: {
-    fontSize: 24,
-    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-    borderRadius: 10,
-    padding: 8,
-    color: "white",
-  },
-  logoText: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  logoTitle: {
-    fontSize: 20,
-    fontWeight: 700,
-    color: "#1e293b",
-    lineHeight: 1.2,
-  },
-  logoSubtitle: {
-    fontSize: 12,
-    color: "#64748b",
-    fontWeight: 500,
-  },
-  userSection: {
-    display: "flex",
-    alignItems: "center",
-    gap: 16,
-  },
-  userInfo: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: "8px 16px",
-    background: "#ffffff",
-    borderRadius: 10,
-    border: "1px solid #e2e8f0",
-  },
-  userAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+  logoMark: {
+    width: 44,
+    height: 44,
+    background: "linear-gradient(135deg, #1e293b, #0f172a)",
+    borderRadius: 14,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 14,
-    fontWeight: 600,
+    boxShadow: "0 8px 20px rgba(0,0,0,0.06)",
+  },
+  logoIcon: {
+    fontSize: 24,
+  },
+  logoText: {
+    fontSize: 22,
+    fontWeight: 700,
+    color: "#0f172a",
+    letterSpacing: "-0.3px",
+    margin: 0,
+    lineHeight: 1.2,
+  },
+  logoSub: {
+    fontSize: 11,
+    color: "#5b6e8c",
+    fontWeight: 500,
+    margin: 0,
+  },
+  userMenu: {
+    display: "flex",
+    alignItems: "center",
+    gap: 24,
+  },
+  userProfile: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "6px 16px 6px 8px",
+    background: "#ffffff",
+    borderRadius: 48,
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+    border: "1px solid #e9eef3",
+  },
+  avatarWrapper: {
+    position: "relative",
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 30,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 18,
     color: "white",
   },
-  userDetails: {
+  statusDot: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    background: "#10b981",
+    borderRadius: 10,
+    border: "2px solid white",
+  },
+  userMeta: {
     display: "flex",
     flexDirection: "column",
   },
   userName: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "#0f172a",
   },
   userRole: {
-    fontSize: 11,
-    color: "#64748b",
+    fontSize: 10,
+    color: "#001e4e",
   },
   logoutBtn: {
     display: "flex",
     alignItems: "center",
     gap: 8,
-    padding: "8px 14px",
-    borderRadius: 8,
+    background: "transparent",
     border: "1px solid #e2e8f0",
-    background: "white",
-    color: "#64748b",
-    cursor: "pointer",
+    padding: "8px 16px",
+    borderRadius: 40,
     fontSize: 13,
     fontWeight: 500,
-    transition: "all 0.2s ease",
-  },
-  logoutIcon: {
-    width: 14,
-    height: 14,
+    color: "#475569",
+    cursor: "pointer",
+    transition: "all 0.2s",
   },
   main: {
     flex: 1,
     padding: "32px",
   },
-  authSection: {
+  authContainer: {
     display: "flex",
-    justifyContent: "center",
     alignItems: "center",
-    minHeight: "60vh",
-    transition: "all 0.3s ease-out",
+    justifyContent: "center",
+    minHeight: "70vh",
   },
-  authSectionExiting: {
-    opacity: 0,
-    transform: "translateY(-10px)",
-  },
-  loadingContainer: {
+  loadingCard: {
+    background: "white",
+    padding: "48px",
+    borderRadius: 32,
     textAlign: "center",
-    padding: "60px 20px",
+    boxShadow: "0 20px 35px -12px rgba(0,0,0,0.08)",
   },
-  loadingSpinner: {
+  loadingRing: {
     width: 40,
     height: 40,
-    border: "3px solid #f1f5f9",
+    border: "3px solid #e2e8f0",
     borderTop: "3px solid #667eea",
     borderRadius: "50%",
-    margin: "0 auto 20px",
+    margin: "0 auto 16px",
     animation: "spin 1s linear infinite",
   },
   loadingText: {
-    color: "#64748b",
-    fontSize: 16,
+    color: "#475569",
   },
   authCard: {
-    width: "100%",
-    maxWidth: 400,
-    padding: "40px",
     background: "white",
-    borderRadius: 16,
-    border: "1px solid #f1f5f9",
-    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)",
+    borderRadius: 36,
+    padding: "40px 36px",
+    width: "100%",
+    maxWidth: 440,
+    boxShadow: "0 25px 45px -12px rgba(0,0,0,0.15)",
+    border: "1px solid rgba(255,255,255,0.5)",
+    transition: "transform 0.2s",
   },
-  authHeader: {
-    textAlign: "center",
-    marginBottom: 32,
-  },
-  authIconContainer: {
+  authBadge: {
+    display: "inline-block",
+    background: "#f1f5f9",
+    padding: "4px 12px",
+    borderRadius: 40,
+    fontSize: 12,
+    fontWeight: 500,
+    color: "#1e293b",
     marginBottom: 20,
   },
-  authIcon: {
-    fontSize: 48,
-    color: "#667eea",
-  },
   authTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 700,
-    color: "#1e293b",
+    color: "#0f172a",
     margin: "0 0 8px 0",
+    letterSpacing: "-0.5px",
   },
-  authSubtitle: {
+  authDesc: {
+    color: "#5b6e8c",
+    marginBottom: 32,
     fontSize: 15,
-    color: "#64748b",
-    lineHeight: 1.5,
-    margin: 0,
   },
-  loginForm: {
+  form: {
     display: "flex",
     flexDirection: "column",
     gap: 20,
@@ -954,698 +894,337 @@ const styles = {
   inputGroup: {
     display: "flex",
     flexDirection: "column",
-    gap: 6,
+    gap: 8,
   },
-  inputLabel: {
-    fontSize: 14,
+  label: {
+    fontSize: 13,
     fontWeight: 600,
-    color: "#374151",
-  },
-  select: {
-    height: 48,
-    borderRadius: 8,
-    border: "1px solid #d1d5db",
-    padding: "0 16px",
-    fontSize: 15,
-    background: "white",
     color: "#1e293b",
-    transition: "all 0.2s ease",
   },
-  passwordContainer: {
+  inputWrapper: {
     position: "relative",
     display: "flex",
     alignItems: "center",
   },
-  passwordInput: {
-    width: "100%",
-    height: 48,
-    borderRadius: 8,
-    border: "1px solid #d1d5db",
-    padding: "0 16px",
-    fontSize: 15,
-    background: "white",
-    color: "#1e293b",
-    transition: "all 0.2s ease",
-  },
-  togglePassword: {
+  inputIcon: {
     position: "absolute",
-    right: 12,
+    left: 14,
+    fontSize: 16,
+    opacity: 0.7,
+  },
+  select: {
+    width: "100%",
+    padding: "14px 14px 14px 40px",
+    borderRadius: 20,
+    border: "1px solid #e2e8f0",
+    fontSize: 14,
+    background: "#ffffff",
+    fontFamily: "inherit",
+    transition: "all 0.2s",
+  },
+  input: {
+    width: "100%",
+    padding: "14px 14px 14px 40px",
+    borderRadius: 20,
+    border: "1px solid #e2e8f0",
+    fontSize: 14,
+    fontFamily: "inherit",
+  },
+  eyeBtn: {
+    position: "absolute",
+    right: 14,
     background: "none",
     border: "none",
-    fontSize: 14,
-    color: "#64748b",
     cursor: "pointer",
-    padding: 4,
-    borderRadius: 4,
-    transition: "all 0.2s ease",
+    fontSize: 16,
   },
-  loginButton: {
-    height: 48,
-    borderRadius: 8,
-    border: "none",
-    background: "#667eea",
-    color: "white",
-    fontSize: 15,
-    fontWeight: 600,
-    cursor: "pointer",
-    marginTop: 8,
-    transition: "all 0.2s ease",
+  errorAlert: {
+    background: "#fef2f2",
+    padding: "12px 16px",
+    borderRadius: 24,
+    fontSize: 13,
+    color: "#dc2626",
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
     gap: 8,
   },
-  loginButtonLoading: {
-    background: "#93c5fd",
-    cursor: "not-allowed",
+  loginBtn: {
+    background: "#0f172a",
+    color: "white",
+    border: "none",
+    padding: "14px",
+    borderRadius: 32,
+    fontWeight: 600,
+    fontSize: 15,
+    cursor: "pointer",
+    transition: "all 0.2s",
+    marginTop: 8,
   },
-  buttonSpinner: {
-    width: 16,
-    height: 16,
-    border: "2px solid transparent",
+  loginBtnLoading: {
+    opacity: 0.7,
+    cursor: "wait",
+  },
+  btnSpinner: {
+    display: "inline-block",
+    width: 18,
+    height: 18,
+    border: "2px solid rgba(255,255,255,0.3)",
     borderTop: "2px solid white",
     borderRadius: "50%",
-    animation: "spin 1s linear infinite",
+    animation: "spin 0.8s linear infinite",
   },
-  errorMessage: {
-    padding: "12px 16px",
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    borderRadius: 8,
-    color: "#dc2626",
-    fontSize: 14,
-    fontWeight: 500,
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
+  authFooter: {
+    marginTop: 24,
+    textAlign: "center",
   },
-  errorIcon: {
-    width: 16,
-    height: 16,
+  authFooterText: {
+    fontSize: 11,
+    color: "#94a3b8",
   },
   dashboard: {
-    maxWidth: 2100,
-    margin: "0 auto",
-    background: '#ffffff',
+    animation: "fadeInUp 0.5s ease-out",
   },
-  welcomeHeader: {
+  heroBanner: {
+    background: "linear-gradient(115deg, #ffffff 0%, #f8fafc 100%)",
+    borderRadius: 32,
+    padding: "28px 32px",
+    marginBottom: 32,
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 32,
-    padding: "24px",
-    background: "white",
-    // borderRadius: 12,
-    border: "1px solid #f1f5f9",
-    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
-  },
-  welcomeContent: {
-    flex: 1,
-  },
-  greeting: {
-    fontSize: 28,
-    fontWeight: 700,
-    color: "#1e293b",
-    margin: "0 0 8px 0",
-    lineHeight: 1.2,
-  },
-  userHighlight: {
-    color: "#00ce3eff",
-  },
-  dashboardSubtitle: {
-    fontSize: 15,
-    color: "#003681ff",
-    margin: 0,
-    maxWidth: 500,
-  },
-  statsContainer: {
-    display: "flex",
-    gap: 16,
-  },
-  statCard: {
-    padding: "16px 20px",
-    background: "#ffffffff",
-    borderRadius: 10,
-    border: "1px solid #e2e8f0",
-    display: "flex",
     alignItems: "center",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.03)",
+    border: "1px solid rgba(0, 55, 122, 0.5)",
+    position: "relative",
+    overflow: "hidden",
+  },
+  heroPattern: {
+    position: "absolute",
+    right: -40,
+    top: -40,
+    width: 200,
+    height: 200,
+    background: "radial-gradient(circle, rgba(102,126,234,0.05) 0%, transparent 70%)",
+    borderRadius: "50%",
+  },
+  heroContent: {
+    display: "flex",
+    justifyContent: "space-between",
+    width: "100%",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 20,
+  },
+  heroGreeting: {
+    fontSize: 14,
+    fontWeight: 500,
+    color: "#d8213a",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+  },
+  heroName: {
+    fontSize: 28,
+    fontWeight: 800,
+    color: "#0f172a",
+    margin: "6px 0 8px 0",
+    letterSpacing: "-0.3px",
+  },
+  heroDesc: {
+    color: "#5b6e8c",
+    fontSize: 14,
+  },
+  heroStats: {
+    display: "flex",
     gap: 12,
   },
-  statIcon: {
-    fontSize: 20,
-    color: "#667eea",
-  },
-  statContent: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 700,
-    color: "#1e293b",
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#64748b",
+  statPill: {
+    background: "white",
+    borderRadius: 40,
+    padding: "8px 18px",
+    fontSize: 13,
     fontWeight: 500,
+    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+    border: "1px solid #eef3fa",
   },
-  mainGrid: {
+  twoColumn: {
     display: "grid",
     gridTemplateColumns: "2fr 1fr",
-    gap: 15,
-    alignItems: "flex-start",
+    gap: 28,
   },
-  featuresSection: {
-    background: "white",
-    borderRadius: 12,
-    border: "1px solid #f1f5f9",
-    padding: "24px",
-    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
+  toolsColumn: {
+    background: "transparent",
   },
-  sectionHeader: {
-    marginBottom: 24,
+  sectionTitleBar: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 700,
-    color: "#1e293b",
-    margin: "0 0 8px 0",
-  },
-  sectionDescription: {
-    fontSize: 14,
-    color: "#64748b",
-    margin: 0,
+  sectionBadge: {
+    background: "#eef2ff",
+    padding: "4px 12px",
+    borderRadius: 60,
+    fontSize: 12,
+    fontWeight: 500,
+    color: "#4f46e5",
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: 16,
+    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+    gap: 20,
   },
   card: {
     background: "white",
-    borderRadius: 10,
-    padding: "20px",
-    border: "1px solid #e2e8f0",
+    borderRadius: 24,
+    padding: 0,
     cursor: "pointer",
-    display: "flex",
-    flexDirection: "column",
     position: "relative",
-    transition: "all 0.3s ease",
-    animation: "cardSlideIn 0.6s ease-out both",
+    overflow: "hidden",
+    transition: "all 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1)",
+    boxShadow: "0 5px 15px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.05)",
+    border: "1px solid #edf2f7",
   },
-  cardHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 16,
-  },
-  cardIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 10,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 18,
-    color: "white",
+  cardGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: 4,
   },
   cardContent: {
-    flex: 1,
+    padding: "20px 20px 22px",
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: 600,
-    color: "#000000ff",
-    margin: "0 0 8px 0",
+  cardTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
   },
-  cardDescription: {
-    fontSize: 13,
-    color: "#003681ff",
-    lineHeight: 1.5,
-    margin: 0,
+  cardEmoji: {
+    fontSize: 32,
   },
   cardArrow: {
-    color: "#64748b",
-    transition: "all 0.3s ease",
+    opacity: 0.5,
+    transition: "transform 0.2s",
+    stroke: "#c430b0",
   },
-  arrowIcon: {
-    width: 16,
-    height: 16,
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: "#002a8b",
+    margin: "0 0 6px 0",
   },
-  instructionsSection: {
+  cardDesc: {
+    fontSize: 12,
+    color: "#000000",
+    lineHeight: 1.45,
+    margin: 0,
+  },
+  rightColumn: {
     display: "flex",
     flexDirection: "column",
     gap: 20,
   },
-  instructionsCard: {
+  instructionCard: {
     background: "white",
-    borderRadius: 12,
-    border: "1px solid #f1f5f9",
+    borderRadius: 28,
     padding: "24px",
-    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
+    border: "1px solid #edf2f7",
+    boxShadow: "0 8px 20px rgba(0,0,0,0.02)",
   },
-  instructionsHeader: {
+  instructionHeader: {
     display: "flex",
     alignItems: "center",
     gap: 12,
     marginBottom: 20,
+    paddingBottom: 12,
+    borderBottom: "2px solid #f1f5f9",
   },
-  instructionsIcon: {
-    fontSize: 20,
-    color: "#667eea",
+  instructionIcon: {
+    fontSize: 24,
   },
-  instructionsTitle: {
-    fontSize: 16,
+  instructionTitle: {
+    fontSize: 18,
     fontWeight: 600,
-    color: "#1e293b",
-    margin: 0,
+    color: "#0f172a",
   },
-  instructionsContent: {
-    minHeight: 200,
+  instructionBody: {
+    minHeight: 220,
   },
-  featureDescription: {
+  featureDesc: {
     fontSize: 14,
-    color: "#00285fff",
+    color: "#334155",
     lineHeight: 1.5,
     marginBottom: 16,
   },
-  instructionsList: {
-    marginTop: 16,
-  },
-  instructionsSubtitle: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#1e293b",
-    margin: "0 0 12px 0",
-  },
-  instructionsItems: {
-    listStyle: "none",
-    padding: 0,
-    margin: 0,
-  },
-  instructionItem: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: 8,
+  instructionList: {
     fontSize: 13,
-    color: "#64748b",
-    lineHeight: 1.5,
-    marginBottom: 8,
+    color: "#b83c3c",
   },
-  bullet: {
-    color: "#667eea",
-    fontWeight: 600,
-  },
-  defaultInstructions: {
+  emptyInstruction: {
     textAlign: "center",
-    padding: "20px 0",
   },
-  defaultText: {
-    fontSize: 14,
-    color: "#64748b",
-    marginBottom: 20,
-    lineHeight: 1.5,
+  hintIcon: {
+    fontSize: 42,
+    display: "block",
+    marginBottom: 12,
   },
-  tips: {
+  tipBlock: {
+    marginTop: 20,
     textAlign: "left",
-  },
-  tipsTitle: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#1e293b",
-    margin: "0 0 12px 0",
-  },
-  tipsList: {
-    listStyle: "none",
-    padding: 0,
-    margin: 0,
-  },
-  tipItem: {
-    fontSize: 13,
-    color: "#64748b",
-    lineHeight: 1.5,
-    marginBottom: 8,
-    paddingLeft: 16,
-    position: "relative",
-  },
-  systemStatus: {
     background: "#f8fafc",
-    borderRadius: 10,
-    border: "1px solid #e2e8f0",
-    padding: "20px",
+    padding: 16,
+    borderRadius: 20,
+  },
+  statusCard: {
+    background: "#ffffff",
+    borderRadius: 28,
+    padding: "20px 24px",
+    border: "1px solid #ecf3fa",
   },
   statusHeader: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: 16,
-  },
-  statusTitle: {
-    fontSize: 14,
     fontWeight: 600,
-    color: "#1e293b",
-    margin: 0,
   },
-  statusIndicator: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
+  statusBadge: {
     fontSize: 12,
-    color: "#64748b",
-    fontWeight: 500,
+    background: "#dcfce7",
+    padding: "4px 10px",
+    borderRadius: 40,
+    color: "#15803d",
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    background: "#10b981",
-  },
-  statusItems: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  },
-  statusItem: {
+  statusRow: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
-  },
-  statusLabel: {
-    fontSize: 12,
-    color: "#64748b",
-  },
-  statusValue: {
-    fontSize: 12,
-    color: "#1e293b",
-    fontWeight: 500,
+    padding: "10px 0",
+    fontSize: 13,
+    borderBottom: "1px solid #f1f5f9",
   },
   footer: {
-    borderTop: "1px solid #f1f5f9",
-    background: "white",
+    borderTop: "1px solid #e2e8f0",
     padding: "20px 32px",
-  },
-  footerContent: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
-    maxWidth: 2200,
-    margin: "0 auto",
-  },
-  footerText: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    fontSize: 13,
-    color: "#64748b",
-    fontWeight: 500,
-  },
-  footerIcon: {
-    fontSize: 14,
+    fontSize: 12,
+    color: "#5b6e8c",
+    background: "rgba(255,255,255,0.7)",
+    backdropFilter: "blur(8px)",
   },
   footerLinks: {
     display: "flex",
-    gap: 16,
-  },
-  footerLink: {
-    fontSize: 13,
-    color: "#64748b",
-    cursor: "pointer",
-    transition: "color 0.2s ease",
+    gap: 20,
   },
 };
 
-const css = `
-/* Enhanced Professional CSS */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-* { 
-  box-sizing: border-box; 
-  margin: 0; 
-  padding: 0; 
-}
-
-body { 
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; 
-  background: #f8fafc;
-  color: #1e293b;
-  line-height: 1.5;
-}
-
-/* Smooth Animations */
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@keyframes cardSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Enhanced Focus States */
-.form-input:focus {
-  outline: none;
-  border-color: #667eea !important;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
-}
-
-/* Smooth Button Interactions */
-.logout-btn:hover {
-  background: #f8fafc !important;
-  border-color: #d1d5db !important;
-  transform: translateY(-1px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.login-button:hover:not(:disabled) {
-  background: #5a6fd8 !important;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
-
-.toggle-password-btn:hover {
-  background: #f3f4f6;
-}
-
-/* Elegant Card Hover Effects */
-.feature-card:hover {
-  transform: translateY(-2px);
-  border-color: #cbd5e1 !important;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08) !important;
-}
-
-.feature-card:hover .card-arrow {
-  color: #667eea;
-  transform: translateX(2px);
-}
-
-.feature-card:hover .arrow-icon {
-  transform: translateX(2px);
-}
-
-/* Paper-style elevation */
-.feature-card,
-.auth-card,
-.instructions-card,
-.welcome-header,
-.features-section {
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
-  border: 1px solid #f1f5f9 !important;
-}
-
-/* Enhanced header paper effect */
-.header {
-  background: white !important;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
-  border-bottom: 1px solid #f1f5f9 !important;
-}
-
-/* Smooth Transitions */
-select,
-input,
-button,
-.feature-card,
-.card-icon,
-.logout-btn,
-.login-button,
-.footer-link {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Loading Animation */
-.loading-spinner {
-  animation: spin 1s linear infinite;
-}
-
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Selection Styles */
-::selection {
-  background: rgba(102, 126, 234, 0.2);
-  color: #1e293b;
-}
-
-/* Footer link hover */
-.footer-link:hover {
-  color: #667eea;
-}
-
-/* Tip item bullet fix */
-.tip-item::before {
-  content: "•";
-  color: #667eea;
-  position: absolute;
-  left: 0;
-}
-
-/* Responsive Design */
-@media (max-width: 1024px) {
-  .main-grid {
-    grid-template-columns: 1fr !important;
-    gap: 20px;
-  }
-  
-  .welcome-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: flex-start;
-  }
-  
-  .stats-container {
-    align-self: flex-start;
-  }
-}
-
-@media (max-width: 768px) {
-  .container {
-    margin: 0;
-  }
-  
-  .header-content {
-    padding: 16px 20px;
-    flex-direction: column;
-    gap: 16px;
-  }
-  
-  .user-section {
-    width: 100%;
-    justify-content: space-between;
-  }
-  
-  .main {
-    padding: 20px;
-  }
-  
-  .auth-card {
-    padding: 32px 24px;
-    margin: 0 16px;
-  }
-  
-  .greeting {
-    font-size: 24px;
-  }
-  
-  .grid {
-    grid-template-columns: 1fr !important;
-  }
-  
-  .features-section,
-  .instructions-card {
-    padding: 20px;
-  }
-  
-  .footer-content {
-    flex-direction: column;
-    gap: 12px;
-    text-align: center;
-  }
-  
-  .footer-links {
-    justify-content: center;
-  }
-}
-
-@media (max-width: 480px) {
-  .dashboard-header h1 {
-    font-size: 22px;
-  }
-  
-  .section-title {
-    font-size: 18px;
-  }
-  
-  .card {
-    padding: 16px;
-  }
-  
-  .auth-title {
-    font-size: 24px;
-  }
-  
-  .welcome-header {
-    padding: 20px;
-  }
-}
-
-/* Utility Classes */
-.smooth-transition {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glass-effect {
-  background: rgba(255, 255, 255, 0.8);a
-  backdrop-filter: blur(10px);
-}
-
-/* Focus Visible for Accessibility */
-button:focus-visible,
-select:focus-visible,
-input:focus-visible {
-  outline: 2px solid #667eea;
-  outline-offset: 2px;
-}
-
-/* Print Styles */
-@media print {
-  .header,
-  .footer,
-  .instructions-section {
-    display: none;
-  }
-  
-  .main-grid {
-    grid-template-columns: 1fr;
-  }
-}
+// Inject keyframes into document (for animations)
+const styleSheet = document.createElement("style");
+styleSheet.textContent = `
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .feature-card:hover { transform: translateY(-4px) scale(1.01); box-shadow: 0 20px 30px -12px rgba(0,0,0,0.12); border-color: #cbd5e1; }
+  .feature-card:hover .card-arrow { opacity: 1; transform: translateX(4px); }
+  select:focus, input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+  button { transition: all 0.2s; }
 `;
+document.head.appendChild(styleSheet);
