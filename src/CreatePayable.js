@@ -1,6 +1,8 @@
 // src/CreatePayable.js
 import React, { useState, useEffect } from 'react';
-import './CreatePayable.css'; // Import the CSS file
+import './CreatePayable.css';
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 // Google Sheets configuration
 const GOOGLE_SHEETS_CONFIG = {
@@ -15,7 +17,7 @@ const GOOGLE_SHEETS_CONFIG = {
 // Separate workbook for rate list
 const RATE_LIST_CONFIG = {
   API_KEY: "AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk",
-  SPREADSHEET_ID: "18KNc9xYqv-vnFFiIkot2Q1MoLvB0n4RukELnQUz-wtQ",
+  SPREADSHEET_ID: "1AhDU_LPVXJB-jZoeJ7gt7uZ2r1lLMRG5AJdZkYGVaUs",
   RANGE: "Master List!A:J",
 };
 
@@ -41,6 +43,10 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
   const [expandedShade, setExpandedShade] = useState(null);
   const [selectedLots, setSelectedLots] = useState({});
   
+  // NEW: Search state for karigar dropdown
+  const [karigarSearchTerm, setKarigarSearchTerm] = useState('');
+  const [isKarigarDropdownOpen, setIsKarigarDropdownOpen] = useState(false);
+  
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
@@ -52,8 +58,6 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
   const [selectedPayable, setSelectedPayable] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [debugInfo, setDebugInfo] = useState('');
-  const [showPaymentSlipModal, setShowPaymentSlipModal] = useState(false);
-  const [paymentSlipData, setPaymentSlipData] = useState(null);
 
   const [formData, setFormData] = useState({
     payableId: '',
@@ -117,10 +121,17 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
         setKarigarProfiles(profiles);
         console.log('Karigar profiles loaded:', profiles.length);
         
-        // Extract unique supervisors from the profiles
         const uniqueSupervisors = [...new Set(profiles.map(p => p.supervisorName))].filter(Boolean);
         setSupervisors(uniqueSupervisors);
         console.log('Supervisors found:', uniqueSupervisors);
+        
+        // NEW: Auto-select the logged-in supervisor
+        if (supervisor?.name && uniqueSupervisors.includes(supervisor.name)) {
+          setSelectedSupervisor(supervisor.name);
+        } else if (uniqueSupervisors.length > 0 && !selectedSupervisor) {
+          // Fallback: if logged-in supervisor not found, don't auto-select
+          console.log('Logged-in supervisor not found in supervisors list:', supervisor?.name);
+        }
       }
     } catch (err) {
       console.error('Error loading karigar profiles:', err);
@@ -137,42 +148,84 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
       if (!response.ok) throw new Error('Failed to fetch karigar assignments');
       const data = await response.json();
 
+      const allAssignments = [];
+
       if (data.values && data.values.length > 0) {
-        const headers = data.values[0];
         const rows = data.values.slice(1);
         
-        const assignments = rows.map((row, index) => {
-          const assignment = {
-            timestamp: row[0] || '',
-            lotNumber: row[1] ? row[1].toString().trim() : '',
-            brand: row[2] ? row[2].trim() : '',
-            fabric: row[3] ? row[3].trim() : '',
-            style: row[4] ? row[4].trim() : '',
-            garmentType: row[5] ? row[5].trim() : '',
-            shade: row[6] ? row[6].trim() : '',
-            karigarName: row[7] ? row[7].trim() : '',
-            karigarId: row[8] ? row[8].toString().trim() : '',
-            quantity: parseInt(row[9]) || 0,
-            savedBy: row[10] ? row[10].trim() : '',
-            supervisor: row[11] ? row[11].trim() : '',
-            savedAt: row[12] || '',
-            status: row[13] ? row[13].trim().toLowerCase() : 'pending',
-            rate: 0,
-            completedQuantity: 0,
-            paymentStatus: 'pending',
-            notes: ''
-          };
-          
-          if (assignment.status === 'completed') {
-            assignment.completedQuantity = assignment.quantity;
+        for (const row of rows) {
+          const timestamp = row[0] || '';
+          const lotNumber = row[1] ? row[1].toString().trim() : '';
+          const brand = row[2] ? row[2].trim() : '';
+          const fabric = row[3] ? row[3].trim() : '';
+          const style = row[4] ? row[4].trim() : '';
+          const garmentType = row[5] ? row[5].trim() : '';
+          const partyName = row[6] ? row[6].trim() : '';
+          const season = row[7] ? row[7].trim() : '';
+          const assignmentsJSON = row[8] ? row[8].trim() : '';
+          const totalShades = parseInt(row[9]) || 0;
+          const totalPieces = parseInt(row[10]) || 0;
+          const savedBy = row[11] ? row[11].trim() : '';
+          const supervisor = row[12] ? row[12].trim() : '';
+          const savedAt = row[13] || '';
+          const rowStatus = row[14] ? row[14].trim().toLowerCase() : 'pending';
+          const lastUpdated = row[15] || '';
+          const completionDateTime = row[16] || '';
+
+          if (assignmentsJSON) {
+            try {
+              const parsedAssignments = JSON.parse(assignmentsJSON);
+              
+              for (const [shade, assignmentData] of Object.entries(parsedAssignments)) {
+                const karigarId = assignmentData.karigarId || '';
+                const karigarName = assignmentData.karigarName || '';
+                const quantity = parseInt(assignmentData.pcs) || 0;
+                const assignmentStatus = assignmentData.status ? assignmentData.status.toLowerCase() : 'pending';
+                const completedAt = assignmentData.completedAt || '';
+                const updatedAt = assignmentData.updatedAt || '';
+                
+                const individualAssignment = {
+                  id: `${lotNumber}_${shade}_${karigarId}`,
+                  timestamp: timestamp,
+                  lotNumber: lotNumber,
+                  brand: brand,
+                  fabric: fabric,
+                  style: style,
+                  garmentType: garmentType,
+                  partyName: partyName,
+                  season: season,
+                  shade: shade,
+                  karigarName: karigarName,
+                  karigarId: karigarId,
+                  quantity: quantity,
+                  completedQuantity: assignmentStatus === 'completed' ? quantity : 0,
+                  savedBy: savedBy,
+                  supervisor: supervisor,
+                  savedAt: savedAt,
+                  status: assignmentStatus,
+                  rowStatus: rowStatus,
+                  rate: 0,
+                  paymentStatus: 'pending',
+                  notes: '',
+                  completedAt: completedAt,
+                  updatedAt: updatedAt,
+                  totalShades: totalShades,
+                  totalPieces: totalPieces,
+                  lastUpdated: lastUpdated,
+                  completionDateTime: completionDateTime
+                };
+                
+                individualAssignment.totalAmount = (individualAssignment.completedQuantity || 0) * (individualAssignment.rate || 0);
+                allAssignments.push(individualAssignment);
+              }
+            } catch (parseError) {
+              console.error(`Error parsing JSON for lot ${lotNumber}:`, parseError);
+            }
           }
-          
-          assignment.totalAmount = (assignment.completedQuantity || assignment.quantity || 0) * (assignment.rate || 0);
-          
-          return assignment;
-        }).filter(a => a.karigarName && a.karigarId);
+        }
         
-        setKarigarAssignments(assignments);
+        console.log('Total individual assignments loaded:', allAssignments.length);
+        setKarigarAssignments(allAssignments);
       }
     } catch (err) {
       console.error('Error loading karigar assignments:', err);
@@ -180,7 +233,6 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
     }
   };
 
-  // Load rate list from separate workbook
   const loadRateList = async () => {
     try {
       setLoading(true);
@@ -188,7 +240,7 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
       const response = await fetch(url);
       
       if (!response.ok) {
-        console.warn('Rate list not available, using fallback rates');
+        console.warn('Rate list not available');
         setRateList([]);
         return;
       }
@@ -199,38 +251,34 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
         const headers = data.values[0];
         const rows = data.values.slice(1);
         
+        const lotNoIndex = headers.findIndex(h => h && h.toLowerCase().includes('lot'));
+        const rateIndex = headers.findIndex(h => h && (h.toLowerCase().includes('total') || h.toLowerCase().includes('rate') || h.includes('₹')));
+        
         const rates = rows.map(row => {
           let rate = 0;
-          if (row[8]) {
-            const rateStr = row[8].toString().replace('₹', '').replace(/,/g, '').trim();
+          let lotNo = '';
+          
+          if (lotNoIndex !== -1 && row[lotNoIndex]) {
+            lotNo = row[lotNoIndex].toString().trim();
+          } else if (row[8]) {
+            lotNo = row[8].toString().trim();
+          }
+          
+          if (rateIndex !== -1 && row[rateIndex]) {
+            const rateStr = row[rateIndex].toString().replace('₹', '').replace(/,/g, '').trim();
+            rate = parseFloat(rateStr) || 0;
+          } else if (row[9]) {
+            const rateStr = row[9].toString().replace('₹', '').replace(/,/g, '').trim();
             rate = parseFloat(rateStr) || 0;
           }
-
-          let timestamp = null;
-          if (row[1]) {
-            const dateParts = row[1].split(' ')[0].split('/');
-            if (dateParts.length === 3) {
-              const [day, month, year] = dateParts;
-              timestamp = `${year}-${month}-${day}`;
-            }
-          }
-
+          
           return {
-            submissionId: row[0] || '',
-            timestamp: timestamp,
-            originalTimestamp: row[1] || '',
-            submitter: row[2] || '',
-            category: row[3] ? row[3].toString().trim() : '',
-            displayCategory: row[4] ? row[4].toString().trim() : '',
-            subcategory: row[5] ? row[5].toString().trim() : '',
-            jacketType: row[6] ? row[6].toString().trim() : '',
-            lotNo: row[7] ? row[7].toString().trim() : '',
-            rate: rate,
-            itemCount: parseInt(row[9]) || 0,
-            selectionsSummary: row[10] || ''
+            lotNo: lotNo,
+            rate: rate
           };
-        }).filter(r => r.rate > 0);
+        }).filter(r => r.lotNo && r.lotNo !== '');
         
+        console.log('Rate list loaded:', rates.length, 'rates by lot number');
         setRateList(rates);
       }
     } catch (err) {
@@ -238,6 +286,42 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
       setRateList([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getRateFromList = (assignment) => {
+    if (!rateList || rateList.length === 0) {
+      return {
+        rate: 0,
+        source: 'none',
+        matchedFrom: 'No rate list available'
+      };
+    }
+
+    const lotNumberStr = assignment.lotNumber.toString().trim();
+    const matchedRate = rateList.find(r => 
+      r.lotNo && r.lotNo.toString().trim() === lotNumberStr
+    );
+
+    if (matchedRate && matchedRate.rate > 0) {
+      return {
+        rate: matchedRate.rate,
+        source: 'rateList',
+        matchedFrom: `Lot ${assignment.lotNumber} - Rate: ₹${matchedRate.rate}`,
+        rateDetails: matchedRate
+      };
+    } else if (matchedRate && matchedRate.rate === 0) {
+      return {
+        rate: 0,
+        source: 'none',
+        matchedFrom: `Lot ${assignment.lotNumber} found but rate is ₹0 in master list`
+      };
+    } else {
+      return {
+        rate: 0,
+        source: 'none',
+        matchedFrom: `No rate found for lot ${assignment.lotNumber} in master list`
+      };
     }
   };
 
@@ -309,7 +393,6 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
     }
   };
 
-  // Filter karigars by supervisor using the profile data
   useEffect(() => {
     if (selectedSupervisor && karigarProfiles.length > 0) {
       const karigarsUnderSupervisor = karigarProfiles
@@ -340,80 +423,33 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
     }
   }, [selectedSupervisor, karigarProfiles, karigarAssignments]);
 
-  // Function to get rate from rate list based on garment details
-  const getRateFromList = (assignment) => {
-    if (!rateList || rateList.length === 0) {
-      return {
-        rate: 0,
-        source: 'none',
-        matchedFrom: 'No rate list available'
-      };
+  // Get filtered karigars based on search term
+  const getFilteredKarigarsBySearch = () => {
+    if (!karigarSearchTerm.trim()) {
+      return filteredKarigars;
     }
-
-    // Try to match by Lot Number first (most accurate)
-    let matchedRate = rateList.find(r => 
-      r.lotNo && r.lotNo.toString().trim() === assignment.lotNumber.toString().trim()
+    
+    const searchLower = karigarSearchTerm.toLowerCase();
+    return filteredKarigars.filter(karigar => 
+      karigar.karigarId.toLowerCase().includes(searchLower) ||
+      karigar.karigarName.toLowerCase().includes(searchLower)
     );
-
-    if (matchedRate) {
-      return {
-        rate: matchedRate.rate,
-        source: 'rateList',
-        matchedFrom: `Exact lot match: ${matchedRate.lotNo}`,
-        rateDetails: matchedRate
-      };
-    }
-
-    // If no lot match, try to match by Category/Subcategory/Jacket Type combination
-    const category = (assignment.garmentType || assignment.category || '').toLowerCase().trim();
-    const subcategory = (assignment.fabric || '').toLowerCase().trim();
-    const jacketType = (assignment.style || '').toLowerCase().trim();
-
-    const possibleMatches = rateList.filter(r => {
-      const rCategory = (r.category || '').toLowerCase().trim();
-      const rDisplayCategory = (r.displayCategory || '').toLowerCase().trim();
-      const rSubcategory = (r.subcategory || '').toLowerCase().trim();
-      const rJacketType = (r.jacketType || '').toLowerCase().trim();
-
-      return (
-        (category && (rCategory === category || rDisplayCategory === category)) ||
-        (subcategory && rSubcategory === subcategory) ||
-        (jacketType && rJacketType === jacketType)
-      );
-    });
-
-    if (possibleMatches.length > 0) {
-      const sortedMatches = possibleMatches.sort((a, b) => {
-        if (a.timestamp && b.timestamp) {
-          return new Date(b.timestamp) - new Date(a.timestamp);
-        }
-        return 0;
-      });
-
-      matchedRate = sortedMatches[0];
-      return {
-        rate: matchedRate.rate,
-        source: 'rateList',
-        matchedFrom: `Matched by details: ${matchedRate.category || matchedRate.displayCategory} / ${matchedRate.subcategory} / ${matchedRate.jacketType}`,
-        rateDetails: matchedRate
-      };
-    }
-
-    return {
-      rate: 0,
-      source: 'none',
-      matchedFrom: `No rate found for lot ${assignment.lotNumber} or similar items`
-    };
   };
 
-  // Load shade-wise lots when karigar is selected - ONLY COMPLETED LOTS
+  const handleKarigarSelect = (karigar) => {
+    setSelectedKarigar(karigar.karigarId);
+    setKarigarSearchTerm('');
+    setIsKarigarDropdownOpen(false);
+  };
+
   useEffect(() => {
     if (selectedKarigar && karigarAssignments.length > 0) {
       const completedWork = karigarAssignments.filter(
         a => a.karigarId && a.karigarId.trim() === selectedKarigar.trim() && a.status === 'completed'
       );
 
-      // Group by shade and calculate amounts using rate list
+      console.log(`Found ${completedWork.length} completed assignments for karigar ${selectedKarigar}`);
+
       const groupedByShade = completedWork.reduce((acc, assignment) => {
         const shade = assignment.shade || 'Unassigned';
         
@@ -430,7 +466,8 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
             lotNumbers: [],
             rateInfo: rateInfo,
             rates: {},
-            completedCount: 0
+            completedCount: 0,
+            lotNumber: assignment.lotNumber
           };
         }
         
@@ -491,6 +528,8 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
   const handleSupervisorChange = (e) => {
     setSelectedSupervisor(e.target.value);
     setSelectedKarigar('');
+    setKarigarSearchTerm('');
+    setIsKarigarDropdownOpen(false);
     setShadeWiseLots({});
     setSelectedShades([]);
     setKarigarWorkSummary(null);
@@ -499,21 +538,14 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
     setDebugInfo('');
   };
 
-  const handleKarigarChange = (e) => {
-    setSelectedKarigar(e.target.value);
-    setSelectedLots({});
-  };
-
   const handleShadeSelection = (shade) => {
     setSelectedShades(prev => {
       if (prev.includes(shade)) {
-        // Remove shade and its lots from selection
         const newSelectedLots = { ...selectedLots };
         delete newSelectedLots[shade];
         setSelectedLots(newSelectedLots);
         return prev.filter(s => s !== shade);
       } else {
-        // Add shade and select all its lots by default
         const newSelectedLots = { ...selectedLots };
         newSelectedLots[shade] = shadeWiseLots[shade].lots.map(lot => lot.lotNumber);
         setSelectedLots(newSelectedLots);
@@ -534,7 +566,6 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
         [shade]: updatedShadeLots
       };
 
-      // Update selected shades based on lot selection
       setSelectedShades(prevShades => {
         if (updatedShadeLots.length === 0) {
           return prevShades.filter(s => s !== shade);
@@ -557,7 +588,6 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
         [shade]: currentShadeLots.length === allLots.length ? [] : allLots
       };
 
-      // Update selected shades
       setSelectedShades(prevShades => {
         if (newSelectedLots[shade].length === 0) {
           return prevShades.filter(s => s !== shade);
@@ -662,7 +692,6 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
       amount: totalAmount,
       category: 'Wages',
       description: `Payment for completed lots:\nLots: ${lotNumbers}\nShades: ${shadesList}\n\nRate Details:\n${rateDetails}`,
-      // Add supervisor to form data
       supervisor: selectedSupervisor || supervisor?.name || 'Supervisor'
     });
   };
@@ -675,375 +704,188 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
     });
   };
 
-  // Enhanced generatePaymentSlipHTML function with black header design
-  const generatePaymentSlipHTML = (payableData, selectedLotsData) => {
-    const currentDate = new Date().toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric'
+  // Black and White PDF Generation Function
+const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
+    // 1. Variable Definitions & Setup
+    const payableId = payableData.payableId || payableData.id || "N/A";
+    
+    // Using numberToWords function on the total amount
+    const amountInWords = typeof numberToWords === 'function' 
+        ? numberToWords(payableData.amount) 
+        : (payableData.amountInWords || "");
+
+    const supervisorName = payableData.supervisor || '________________';
+    
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 10;
+    let yPos = 18;
+
+    const formatCurrency = (num) => parseFloat(num || 0).toLocaleString('en-IN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
     });
+
+    const currentDate = new Date().toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+
+    // Calculate total quantity
+    let totalQuantity = 0;
+    selectedLotsData.forEach(shade => {
+        shade.lots.forEach(lot => {
+            const qty = parseFloat(lot.completedQuantity || lot.quantity || 0);
+            totalQuantity += qty;
+        });
+    });
+
+    // --- 2. FULL PAGE BORDER ---
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.4);
+    doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+
+    // --- 3. HEADER SECTION ---
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("PAYMENT VOUCHER", pageWidth / 2, yPos, { align: "center" });
     
-    const payableId = payableData.payableId || generatePayableId();
-    const amountInWords = numberToWords(payableData.amount);
-    const supervisorName = payableData.supervisor || selectedSupervisor || payableData.createdBy || 'Supervisor';
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text("KARIGAR PAYMENT SLIP", pageWidth / 2, yPos + 6, { align: "center" });
     
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Payment Slip - ${payableId}</title>
-        <style>
-          body {
-            font-family: 'Arial', sans-serif;
-            margin: 0;
-            padding: 15px;
-            background: #f5f5f5;
-          }
-          .payment-slip {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border: 2px solid #000;
-            padding: 20px;
-            position: relative;
-            font-size: 12px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-          }
-          .header {
-            text-align: center;
-            border-bottom: 2px solid #000;
-            padding-bottom: 12px;
-            margin-bottom: 15px;
-            position: relative;
-          }
-          .header h1 {
-            margin: 0;
-            color: #000;
-            font-size: 24px;
-            text-transform: uppercase;
-            font-weight: 800;
-            letter-spacing: 1px;
-          }
-          .slip-title {
-            text-align: center;
-            margin: 15px 0;
-          }
-          .slip-title h3 {
-            display: inline-block;
-            border: 2px solid #000;
-            padding: 6px 30px;
-            margin: 0;
-            font-size: 16px;
-            text-transform: uppercase;
-            background: #f0f0f0;
-            color: #000;
-            font-weight: 700;
-            letter-spacing: 1px;
-          }
-          .voucher-section {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            text-align: right;
-          }
-          .voucher-label {
-            font-size: 10px;
-            color: #666;
-            text-transform: uppercase;
-          }
-          .voucher-number {
-            font-size: 14px;
-            font-weight: 700;
-            color: #000;
-            font-family: monospace;
-            letter-spacing: 1px;
-          }
-          .info-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin: 15px 0;
-            padding: 12px;
-            border: 1px solid #000;
-            background: #fafafa;
-          }
-          .info-item {
-            display: flex;
-            align-items: baseline;
-          }
-          .info-label {
-            width: 90px;
-            font-weight: 600;
-            color: #000;
-            font-size: 11px;
-            text-transform: uppercase;
-          }
-          .info-value {
-            flex: 1;
-            color: #000;
-            font-weight: 500;
-            font-size: 12px;
-          }
-          .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 15px 0;
-            font-size: 11px;
-            border: 1px solid #000;
-          }
-          .items-table th {
-            background: #000;
-            color: white;
-            padding: 8px 4px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            border-right: 1px solid #333;
-          }
-          .items-table th:last-child {
-            border-right: none;
-          }
-          .items-table td {
-            padding: 6px 4px;
-            border: 1px solid #000;
-            color: #000;
-          }
-          .items-table tr:nth-child(even) {
-            background: #f5f5f5;
-          }
-          .amount-in-words {
-            margin: 15px 0;
-            padding: 12px;
-            background: #f0f0f0;
-            border-left: 4px solid #000;
-            font-style: italic;
-            font-size: 12px;
-            color: #000;
-            font-weight: 500;
-          }
-          .total-section {
-            text-align: right;
-            font-size: 16px;
-            font-weight: 800;
-            margin: 15px 0;
-            padding: 12px 15px;
-            background: #e8f4f8;
-            border: 2px solid #000;
-            color: #000;
-          }
-          .total-section .total-label {
-            margin-right: 15px;
-            text-transform: uppercase;
-          }
-          .total-section .total-amount {
-            font-size: 18px;
-          }
-          .footer {
-            margin-top: 30px;
-            display: flex;
-            justify-content: space-between;
-            position: relative;
-          }
-          .signature {
-            text-align: center;
-            width: 200px;
-          }
-          .signature-line {
-            border-top: 2px solid #000;
-            margin-top: 35px;
-            padding-top: 6px;
-            font-size: 11px;
-            color: #000;
-            font-weight: 500;
-          }
-          .supervisor-signature {
-            text-align: center;
-            width: 200px;
-            margin-top: 20px;
-          }
-          .supervisor-name {
-            font-weight: 700;
-            color: #000;
-            font-size: 12px;
-            text-transform: uppercase;
-            margin-bottom: 5px;
-          }
-          .supervisor-line {
-            border-top: 2px solid #000;
-            margin-top: 25px;
-            padding-top: 6px;
-            font-size: 11px;
-            color: #000;
-            font-weight: 500;
-          }
-          .watermark {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 60px;
-            color: rgba(0, 0, 0, 0.03);
-            white-space: nowrap;
-            pointer-events: none;
-            z-index: 0;
-            font-weight: 800;
-            text-transform: uppercase;
-          }
-          .footer-note {
-            margin-top: 10px;
-            font-size: 9px;
-            text-align: center;
-            color: #666;
-            border-top: 1px dashed #000;
-            padding-top: 8px;
-          }
-          .payment-type-badge {
-            display: inline-block;
-            padding: 3px 10px;
-            background: #000;
-            color: white;
-            font-size: 10px;
-            font-weight: 600;
-            border-radius: 15px;
-            margin-left: 10px;
-          }
-          .text-right {
-            text-align: right;
-          }
-          .text-center {
-            text-align: center;
-          }
-          .font-bold {
-            font-weight: 700;
-          }
-          @media print {
-            body { background: white; }
-            .payment-slip { 
-              border: 2px solid #000;
-              box-shadow: none;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="payment-slip">
-          <div class="watermark">${payableData.status.toUpperCase()}</div>
-          
-          <div class="voucher-section">
-            <div class="voucher-label">VOUCHER NUMBER</div>
-            <div class="voucher-number">${payableId}</div>
-          </div>
-          
-          <div class="header">
-            <h1>PAYMENT VOUCHER</h1>
-            <div class="payment-type-badge" style="margin-top: 5px;">${payableData.payableType?.toUpperCase() || 'PAYMENT'}</div>
-          </div>
+    doc.setFont("helvetica", "bold");
+    doc.text(`VOUCHER NUMBER: ${payableId}`, pageWidth - margin - 2, yPos, { align: "right" });
 
-          <div class="slip-title">
-            <h3>KARIGAR PAYMENT SLIP</h3>
-          </div>
+    yPos += 12;
 
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="info-label">Date:</span>
-              <span class="info-value">${currentDate}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Due Date:</span>
-              <span class="info-value">${new Date(payableData.dueDate).toLocaleDateString('en-IN')}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Payee:</span>
-              <span class="info-value">${payableData.payeeName}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Payee ID:</span>
-              <span class="info-value">${payableData.payeeId}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Category:</span>
-              <span class="info-value">${payableData.category}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Status:</span>
-              <span class="info-value" style="font-weight: 700; text-transform: uppercase;">${payableData.status}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Ref No:</span>
-              <span class="info-value">${payableData.reference || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Supervisor:</span>
-              <span class="info-value" style="font-weight: 700;">${supervisorName}</span>
-            </div>
-          </div>
+    // --- 4. INFORMATION GRID (TOP BOX) ---
+    doc.setLineWidth(0.3);
+    doc.rect(margin, yPos, pageWidth - (margin * 2), 28); 
+    doc.line(pageWidth / 2 + 5, yPos, pageWidth / 2 + 5, yPos + 28); 
 
-          ${selectedLotsData && selectedLotsData.length > 0 ? `
-            <table class="items-table">
-              <thead>
-                <tr>
-                  <th>Lot No</th>
-                  <th>Shade</th>
-                  <th>Brand/Style</th>
-                  <th>Fabric</th>
-                  <th>Qty</th>
-                  <th>Rate (₹)</th>
-                  <th>Amount (₹)</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${selectedLotsData.flatMap(shade => 
-                  shade.lots.map(lot => `
-                    <tr>
-                      <td class="font-bold">${lot.lotNumber}</td>
-                      <td>${lot.shade}</td>
-                      <td>${lot.brand || ''} / ${lot.style || ''}</td>
-                      <td>${lot.fabric || ''}</td>
-                      <td class="text-right">${lot.completedQuantity || lot.quantity}</td>
-                      <td class="text-right">${lot.rate.toFixed(2)}</td>
-                      <td class="text-right">${lot.totalAmount.toFixed(2)}</td>
-                    </tr>
-                  `)
-                ).join('')}
-                <tr style="background: #000; color: white; font-weight: 700;">
-                  <td colspan="4" style="text-align: right; border-right: 1px solid #333;">TOTAL:</td>
-                  <td style="text-align: right; border-right: 1px solid #333;">${selectedLotsData.reduce((sum, s) => sum + s.totalQuantity, 0)}</td>
-                  <td style="text-align: right; border-right: 1px solid #333;">—</td>
-                  <td style="text-align: right;">₹${selectedLotsData.reduce((sum, s) => sum + s.totalAmount, 0).toFixed(2)}</td>
-                </tr>
-              </tbody>
-            </table>
-          ` : ''}
+    doc.setFontSize(9);
+    const leftX = margin + 3;
+    const rightX = pageWidth / 2 + 8;
 
-          <div class="amount-in-words">
-            <strong>Amount in words:</strong> ${amountInWords} Rupees Only
-          </div>
+    // Left Column
+    doc.setFont("helvetica", "bold"); doc.text("DATE:", leftX, yPos + 6);
+    doc.setFont("helvetica", "normal"); doc.text(currentDate, leftX + 15, yPos + 6);
+    doc.setFont("helvetica", "bold"); doc.text("PAYEE:", leftX, yPos + 12);
+    doc.setFont("helvetica", "normal"); doc.text(`${payableData.payeeName || ''}`, leftX + 15, yPos + 12);
+    doc.setFont("helvetica", "bold"); doc.text("CATEGORY:", leftX, yPos + 18);
+    doc.setFont("helvetica", "normal"); doc.text(`${payableData.category || ''}`, leftX + 22, yPos + 18);
+    doc.setFont("helvetica", "bold"); doc.text("STATUS:", leftX, yPos + 24);
+    doc.setFont("helvetica", "normal"); doc.text(`${payableData.status || ''}`, leftX + 18, yPos + 24);
 
-          <div class="total-section">
-            <span class="total-label">Total Payable Amount:</span>
-            <span class="total-amount">₹ ${parseFloat(payableData.amount).toFixed(2)}</span>
-          </div>
+    // Right Column
+    doc.setFont("helvetica", "bold"); doc.text("DUE DATE:", rightX, yPos + 6);
+    doc.setFont("helvetica", "normal"); doc.text(new Date(payableData.dueDate).toLocaleDateString('en-IN'), rightX + 20, yPos + 6);
+    doc.setFont("helvetica", "bold"); doc.text("PAYEE ID:", rightX, yPos + 12);
+    doc.setFont("helvetica", "normal"); doc.text(`${payableData.payeeId || ''}`, rightX + 20, yPos + 12);
+    doc.setFont("helvetica", "bold"); doc.text("TOTAL QTY:", rightX, yPos + 18);
+    
+    // UPDATED: Removed .toFixed(2) so it shows 55 instead of 55.00
+    doc.setFont("helvetica", "normal"); 
+    doc.text(`${Math.round(totalQuantity)}`, rightX + 25, yPos + 18);
 
-          <div class="footer">
-            <div class="signature">
-              <div class="signature-line">Receiver's Signature</div>
-            </div>
-            <div class="supervisor-signature">
-              <div class="supervisor-name">${supervisorName}</div>
-              <div class="supervisor-line">Supervisor/Thekedar</div>
-            </div>
-          </div>
+    doc.setFont("helvetica", "bold"); doc.text("SUPERVISOR:", rightX, yPos + 24);
+    doc.setFont("helvetica", "normal"); doc.text(supervisorName, rightX + 25, yPos + 24);
 
-          <div class="footer-note">
-            This is a computer generated payment voucher • Valid only with authorized signature
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-  };
-  
-  // Helper function to convert number to words
+    yPos += 28;
+
+    // --- 5. AMOUNT IN WORDS ---
+    doc.setLineWidth(0.3);
+    doc.rect(margin, yPos, pageWidth - (margin * 2), 10);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Amt in Words :-`, margin + 3, yPos + 6.5);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${amountInWords} Rupees Only`, margin + 30, yPos + 6.5);
+
+    // --- 6. THE GAP ---
+    yPos += 25; 
+
+    // --- 7. MAIN TABLE ---
+    const tableBody = [];
+    let calculatedGrandTotal = 0;
+
+    selectedLotsData.forEach(shade => {
+        shade.lots.forEach(lot => {
+            const qty = parseFloat(lot.completedQuantity || lot.quantity || 0);
+            const rate = parseFloat(lot.rate || 0);
+            const lineAmount = qty * rate;
+            calculatedGrandTotal += lineAmount;
+
+            tableBody.push([
+                lot.lotNumber || '',
+                shade.shade || '',
+                `${lot.brand || ''} ${lot.style || ''}`.trim(),
+                qty, // Individual row qty
+                rate.toFixed(2),
+                lineAmount.toFixed(2)
+            ]);
+        });
+    });
+
+    autoTable(doc, {
+        startY: yPos,
+        head: [['LOT NO.', 'SHADE', 'BRAND/STYLE', 'QTY', 'RATE', 'Amt.']],
+        body: tableBody,
+        theme: 'grid',
+        styles: { 
+            lineColor: [0, 0, 0], 
+            lineWidth: 0.2, 
+            textColor: [0, 0, 0], 
+            halign: 'center',
+            fontSize: 8.5,
+            cellPadding: 3
+        },
+        headStyles: { 
+            fillColor: [245, 245, 245], 
+            textColor: [0, 0, 0], 
+            fontStyle: 'bold',
+            lineWidth: 0.2
+        },
+        margin: { left: margin, right: margin },
+        columnStyles: {
+            0: { cellWidth: 'auto' },
+            1: { cellWidth: 'auto' },
+            2: { cellWidth: 'auto' },
+            3: { cellWidth: 'auto' },
+            4: { cellWidth: 'auto' },
+            5: { cellWidth: 'auto' }
+        }
+    });
+
+    yPos = doc.lastAutoTable.finalY;
+
+    // --- 8. TOTAL PAYABLE SECTION ---
+    doc.rect(margin, yPos, pageWidth - (margin * 2), 12);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    // doc.text("TOTAL", margin + 15, yPos + 7.5);
+    doc.text("PAYABLE AMOUNT", margin + 70, yPos + 7.5);
+    doc.setFontSize(12);
+    doc.text(`Rs. ${formatCurrency(calculatedGrandTotal)}`, pageWidth - margin - 5, yPos + 7.5, { align: "right" });
+
+    // --- 9. SIGNATURE SECTION ---
+    const footerY = pageHeight - 30;
+    doc.setLineWidth(0.4);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    
+    doc.line(margin + 5, footerY, margin + 65, footerY);
+    doc.text("RECEIVER SIGNATURE", margin + 35, footerY + 5, { align: "center" });
+
+    doc.line(pageWidth - margin - 65, footerY, pageWidth - margin - 5, footerY);
+    doc.text("SUPERVISOR/ THEKEDAR", pageWidth - margin - 35, footerY + 5, { align: "center" });
+
+    // --- 10. SAVE ---
+    doc.save(`Voucher_${payableId}.pdf`);
+};
+
   const numberToWords = (num) => {
     const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
       'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
@@ -1069,127 +911,153 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
     return words;
   };
 
-  // Function to download payment slip as HTML file
-  const downloadPaymentSlip = (payableData, selectedLotsData) => {
-    const slipHTML = generatePaymentSlipHTML(payableData, selectedLotsData);
-    const blob = new Blob([slipHTML], { type: 'text/html' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Payment_Slip_${payableData.payableId || generatePayableId()}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  };
+const submitPayable = async (e) => {
+  e.preventDefault();
+  setSubmitting(true);
+  setError('');
 
-  // Function to download payment slip as PDF (requires browser print)
-  const downloadPaymentSlipAsPDF = (payableData, selectedLotsData) => {
-    const slipHTML = generatePaymentSlipHTML(payableData, selectedLotsData);
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(slipHTML);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-  };
+  try {
+    if (!formData.payeeName || !formData.amount || !formData.dueDate) {
+      throw new Error('Please fill all required fields');
+    }
 
-  // Modified submitPayable function
-  const submitPayable = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError('');
-
-    try {
-      if (!formData.payeeName || !formData.amount || !formData.dueDate) {
-        throw new Error('Please fill all required fields');
-      }
-
-      const payableId = generatePayableId();
-
-      const newPayable = [
-        Date.now().toString(),
-        payableId,
-        payableType,
-        formData.payeeId,
-        formData.payeeName,
-        formData.amount,
-        formData.dueDate,
-        formData.paymentDate || '',
-        formData.status,
-        formData.category,
-        formData.description,
-        formData.reference,
-        formData.notes,
-        supervisor?.name || 'Unknown',
-        new Date().toISOString(),
-        new Date().toISOString()
-      ];
-
-      // Prepare payment slip data first (so we have it even if save fails)
-      const selectedLotsData = getSelectedLotsData();
-      const paymentData = {
-        ...formData,
+    const payableId = generatePayableId();
+    const selectedLotsData = getSelectedLotsData();
+    const currentDate = new Date().toISOString().split('T')[0];
+    
+    // IMPORTANT: Replace with your actual Apps Script Web App URL
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyuhODCrUpcFi0b5Om0GrT0dwRuS-QFHlW1ms_6fIiByzMU522dI_qvW2OO6Lkrtnsv/exec';
+    
+    // Create payment record for Payables sheet using Apps Script
+    const newPayable = {
+      action: 'createPayable',
+      data: {
         payableId: payableId,
         payableType: payableType,
-        // Make sure supervisor is included
-        supervisor: selectedSupervisor || supervisor?.name || 'Supervisor'
-      };
-
-      let saveSuccess = false;
+        payeeId: formData.payeeId,
+        payeeName: formData.payeeName,
+        amount: formData.amount,
+        dueDate: formData.dueDate,
+        paymentDate: formData.paymentDate || currentDate,
+        status: formData.status,
+        category: formData.category,
+        description: formData.description,
+        reference: formData.reference,
+        notes: formData.notes,
+        createdBy: supervisor?.name || 'Unknown'
+      }
+    };
+    
+    let saveSuccess = false;
+    
+    // 1. Save to Payables sheet via Apps Script
+    try {
+      const response = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          action: 'createPayable',
+          data: JSON.stringify(newPayable.data)
+        })
+      });
       
-      // Try to save to Google Sheets
+      const result = await response.json();
+      
+      if (result.success) {
+        saveSuccess = true;
+        console.log('Payable saved successfully:', result);
+      } else {
+        throw new Error(result.error || 'Failed to save payable');
+      }
+      
+    } catch (saveError) {
+      console.error('Error saving to Google Sheets:', saveError);
+      throw new Error('Failed to save payable to database: ' + saveError.message);
+    }
+
+    // 2. UPDATE KARIGAR ASSIGNMENTS with payment information in JSON
+    // Group updates by lot to batch process
+    const updatesByLot = {};
+    
+    for (const shadeData of selectedLotsData) {
+      for (const lot of shadeData.lots) {
+        if (!updatesByLot[lot.lotNumber]) {
+          updatesByLot[lot.lotNumber] = {
+            lotNumber: lot.lotNumber,
+            shades: [],
+            amounts: []
+          };
+        }
+        if (!updatesByLot[lot.lotNumber].shades.includes(shadeData.shade)) {
+          updatesByLot[lot.lotNumber].shades.push(shadeData.shade);
+          updatesByLot[lot.lotNumber].amounts.push(lot.totalAmount);
+        }
+      }
+    }
+    
+    // Process each lot's updates
+    for (const lotNumber in updatesByLot) {
+      const updateData = updatesByLot[lotNumber];
+      
       try {
-        const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID}/values/${GOOGLE_SHEETS_CONFIG.PAYABLES_RANGE}:append?valueInputOption=USER_ENTERED&key=${GOOGLE_SHEETS_CONFIG.API_KEY}`;
+        console.log(`Updating payment info for lot ${lotNumber} with shades:`, updateData.shades);
         
-        const response = await fetch(appendUrl, {
+        const updateResponse = await fetch(APPS_SCRIPT_URL, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
           },
-          body: JSON.stringify({
-            values: [newPayable]
+          body: new URLSearchParams({
+            action: 'updateBulkPaymentInfo',
+            data: JSON.stringify({
+              lotNumber: updateData.lotNumber,
+              shades: updateData.shades,
+              paymentId: payableId,
+              totalAmount: parseFloat(formData.amount),
+              paymentDate: formData.paymentDate || currentDate,
+              paidBy: supervisor?.name || 'Unknown',
+              paymentStatus: 'paid'
+            })
           })
         });
-
-        if (!response.ok) throw new Error('Failed to save payable');
-        saveSuccess = true;
         
-      } catch (saveError) {
-        console.error('Error saving to Google Sheets:', saveError);
-        // Don't throw error here - we still want to show the payment slip
+        const updateResult = await updateResponse.json();
+        console.log(`Payment info updated for lot ${lotNumber}:`, updateResult);
+        
+      } catch (updateError) {
+        console.error(`Error updating payment info for lot ${lotNumber}:`, updateError);
+        // Don't throw here, continue with other updates
       }
-
-      // Always show payment slip modal (whether save succeeded or failed)
-      setPaymentSlipData({
-        payable: paymentData,
-        lots: selectedLotsData,
-        totalAmount: calculateTotalAmount(),
-        totalQuantity: calculateTotalQuantity(),
-        saveSuccess: saveSuccess,
-        // Add supervisor here as well
-        supervisor: selectedSupervisor || supervisor?.name || 'Supervisor'
-      });
-      setShowPaymentSlipModal(true);
-      
-      if (saveSuccess) {
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 3000);
-        loadPayables();
-        loadKarigarAssignments();
-      } else {
-        // Show warning but still allow download
-        setError('Payment created but failed to save to database. You can still download the slip.');
-      }
-
-      resetForm();
-
-    } catch (err) {
-      console.error('Error in payment process:', err);
-      setError(err.message || 'Failed to process payment');
-    } finally {
-      setSubmitting(false);
     }
-  };
+
+    // Generate PDF
+    const paymentData = {
+      ...formData,
+      payableId: payableId,
+      payableType: payableType,
+      supervisor: selectedSupervisor || supervisor?.name || 'Supervisor'
+    };
+    
+    generatePaymentSlipPDF(paymentData, selectedLotsData);
+    
+    if (saveSuccess) {
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      loadPayables();
+      loadKarigarAssignments();
+    }
+
+    resetForm();
+
+  } catch (err) {
+    console.error('Error in payment process:', err);
+    setError(err.message || 'Failed to process payment');
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const resetForm = () => {
     setFormData({
@@ -1211,6 +1079,8 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
     });
     setSelectedSupervisor('');
     setSelectedKarigar('');
+    setKarigarSearchTerm('');
+    setIsKarigarDropdownOpen(false);
     setShadeWiseLots({});
     setSelectedShades([]);
     setSelectedLots({});
@@ -1260,7 +1130,6 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
     { id: 'view', label: 'View Payables', icon: '👁️' }
   ];
 
-  // UPDATED: Added navigateTo property to supplier card
   const payableTypes = [
     { id: 'karigar', label: 'Karigar Wages', icon: '👤', desc: 'Process worker payments' },
     { 
@@ -1268,14 +1137,13 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
       label: 'Supervisor/Thekedar Payment', 
       icon: '🏭', 
       desc: 'Pay material Supervisor/Thekedar',
-      navigateTo: 'supervisorPayment' // Add navigation identifier
+      navigateTo: 'supervisorPayment'
     },
     { id: 'operational', label: 'Operational Expense', icon: '⚡', desc: 'Other business expenses' }
   ];
 
   return (
     <div className="create-payable-container">
-      {/* Header */}
       <div className="create-payable-header">
         <div className="create-payable-header-left">
           <button onClick={onBack} className="create-payable-back-button">
@@ -1287,19 +1155,22 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
           </div>
         </div>
         <div className="create-payable-header-right">
+          {/* UPDATED: Display logged-in user prominently */}
           <div className="create-payable-supervisor-badge">
             <span className="create-payable-supervisor-avatar">
               {supervisor?.name?.charAt(0) || 'U'}
             </span>
             <div className="create-payable-supervisor-info">
-              <span className="create-payable-supervisor-label">Supervisor</span>
+              <span className="create-payable-supervisor-label">Logged in as</span>
               <span className="create-payable-supervisor-name">{supervisor?.name || 'Unknown'}</span>
+              {supervisor?.role && (
+                <span className="create-payable-supervisor-role">({supervisor.role})</span>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Status Indicators */}
       {rateList.length === 0 && (
         <div className="create-payable-warning-alert">
           <span className="create-payable-alert-icon">⚠️</span>
@@ -1314,25 +1185,10 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
         </div>
       )}
 
-      {karigarProfiles.length === 0 && (
-        <div className="create-payable-warning-alert">
-          <span className="create-payable-alert-icon">⚠️</span>
-          <span>Karigar profiles not loaded. Supervisor filtering may not work properly.</span>
-        </div>
-      )}
-
-      {/* Debug Info - Remove in production */}
-      {debugInfo && (
-        <div className="create-payable-debug-info">
-          <pre>{debugInfo}</pre>
-        </div>
-      )}
-
-      {/* Alerts */}
       {showSuccess && (
         <div className="create-payable-success-alert">
           <span className="create-payable-alert-icon">✓</span>
-          <span>Payable created successfully!</span>
+          <span>Payable created successfully! PDF downloaded.</span>
         </div>
       )}
       {error && (
@@ -1342,7 +1198,6 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
         </div>
       )}
 
-      {/* Module Navigation */}
       <div className="create-payable-module-nav">
         {modules.map(module => (
           <button
@@ -1356,11 +1211,9 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
         ))}
       </div>
 
-      {/* Main Content */}
       <div className="create-payable-content">
         {activeModule === 'create' ? (
           <div className="create-payable-module-content">
-            {/* Payable Type Selection */}
             <div className="create-payable-type-section">
               <h2 className="create-payable-section-title">Select Payable Type</h2>
               <div className="create-payable-type-grid">
@@ -1369,19 +1222,14 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
                     key={type.id}
                     className={`create-payable-type-card ${payableType === type.id ? 'active' : ''}`}
                     onClick={() => {
-                      // UPDATED: Check if this card has navigation
                       if (type.navigateTo) {
-                        // Navigate to supervisor payment component using the onNavigate prop
                         if (onNavigate) {
                           onNavigate(type.navigateTo);
                         } else {
-                          console.warn('onNavigate prop is not provided');
-                          // Fallback to normal behavior if navigation not available
                           setPayableType(type.id);
                           resetForm();
                         }
                       } else {
-                        // Normal behavior for other types
                         setPayableType(type.id);
                         resetForm();
                       }
@@ -1391,53 +1239,42 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
                     <div className="create-payable-type-info">
                       <h3 className="create-payable-type-label">{type.label}</h3>
                       <p className="create-payable-type-desc">{type.desc}</p>
-                      {/* UPDATED: Add indicator for navigation card */}
-                      {type.navigateTo && (
-                        <span className="create-payable-navigation-indicator" style={{
-                          fontSize: '11px',
-                          color: '#2563eb',
-                          marginTop: '4px',
-                          display: 'inline-block'
-                        }}>
-                          Click to navigate →
-                        </span>
-                      )}
                     </div>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Main Form Area - Two Column Layout */}
             <div className="create-payable-form-container">
-              {/* Left Column - Selection Area */}
               <div className="create-payable-left-column">
                 {payableType === 'karigar' ? (
                   <>
-                    {/* Selection Cards */}
                     <div className="create-payable-card">
                       <h3 className="create-payable-card-title">Step 1: Select Supervisor</h3>
                       <div className="create-payable-field">
                         <label className="create-payable-label">
                           Supervisor/Thekedar <span className="create-payable-required">*</span>
                         </label>
+                        {/* UPDATED: Supervisor dropdown now shows only the logged-in user */}
                         <select
                           className="create-payable-select"
                           value={selectedSupervisor}
                           onChange={handleSupervisorChange}
                           required
+                          disabled={supervisors.length === 1} // Disable if only one option
                         >
                           <option value="">Choose Supervisor</option>
-                          {supervisors.map(sup => (
-                            <option key={sup} value={sup}>
-                              {sup}
-                            </option>
-                          ))}
+                          {/* Filter supervisors to show only the logged-in user's name */}
+                          {supervisors
+                            .filter(sup => sup === supervisor?.name)
+                            .map(sup => (
+                              <option key={sup} value={sup}>{sup}</option>
+                            ))}
                         </select>
-                        {supervisors.length === 0 && (
-                          <p className="create-payable-helper-text">
-                            No supervisors found in KarigarProfile sheet
-                          </p>
+                        {supervisor?.name && supervisors.length > 0 && !supervisors.includes(supervisor.name) && (
+                          <div className="create-payable-warning-text">
+                            ⚠️ Your name "{supervisor.name}" is not in the supervisors list. Please contact admin.
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1448,68 +1285,72 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
                         <label className="create-payable-label">
                           Karigar <span className="create-payable-required">*</span>
                         </label>
-                        <select
-                          className="create-payable-select"
-                          value={selectedKarigar}
-                          onChange={handleKarigarChange}
-                          disabled={!selectedSupervisor}
-                          required
-                        >
-                          <option value="">Choose Karigar</option>
-                          {filteredKarigars.map(k => (
-                            <option key={k.karigarId} value={k.karigarId}>
-                              {k.karigarId} ({k.karigarName})
-                              {k.skillType ? ` - ${k.skillType}` : ''}
-                              {k.floorArea ? ` [${k.floorArea}]` : ''}
-                              {k.totalLots > 0 ? ` - ${k.totalLots} completed lots (₹${k.totalAmount.toLocaleString()})` : ' - No completed work'}
-                            </option>
-                          ))}
-                        </select>
-                        {selectedSupervisor && filteredKarigars.length === 0 && (
-                          <p className="create-payable-helper-text">
-                            No karigars found under this supervisor
-                          </p>
-                        )}
+                        <div className="create-payable-searchable-dropdown">
+                          <input
+                            type="text"
+                            className="create-payable-input create-payable-search-input"
+                            placeholder="Search by ID or Name..."
+                            value={selectedKarigar ? (filteredKarigars.find(k => k.karigarId === selectedKarigar)?.karigarName || '') : karigarSearchTerm}
+                            onChange={(e) => {
+                              setKarigarSearchTerm(e.target.value);
+                              setIsKarigarDropdownOpen(true);
+                              if (selectedKarigar) {
+                                setSelectedKarigar('');
+                              }
+                            }}
+                            onFocus={() => setIsKarigarDropdownOpen(true)}
+                            disabled={!selectedSupervisor}
+                            readOnly={!!selectedKarigar}
+                          />
+                          {selectedKarigar && (
+                            <button
+                              className="create-payable-clear-search"
+                              onClick={() => {
+                                setSelectedKarigar('');
+                                setKarigarSearchTerm('');
+                                setShadeWiseLots({});
+                                setKarigarWorkSummary(null);
+                              }}
+                              type="button"
+                            >
+                              ✕
+                            </button>
+                          )}
+                          {isKarigarDropdownOpen && (
+                            <div className="create-payable-dropdown-list">
+                              {getFilteredKarigarsBySearch().length > 0 ? (
+                                getFilteredKarigarsBySearch().map(karigar => (
+                                  <div
+                                    key={karigar.karigarId}
+                                    className="create-payable-dropdown-item"
+                                    onClick={() => handleKarigarSelect(karigar)}
+                                  >
+                                    <div className="create-payable-dropdown-item-main">
+                                      <span className="create-payable-dropdown-id">{karigar.karigarId}</span>
+                                      <span className="create-payable-dropdown-name">{karigar.karigarName}</span>
+                                    </div>
+                                    <div className="create-payable-dropdown-details">
+                                      <span className="create-payable-dropdown-lots">
+                                        {karigar.totalLots} lots completed
+                                      </span>
+                                      {karigar.totalAmount > 0 && (
+                                        <span className="create-payable-dropdown-amount">
+                                          ₹{karigar.totalAmount.toLocaleString()}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="create-payable-dropdown-no-results">
+                                  No karigars found matching "{karigarSearchTerm}"
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-
-                    {/* Karigar Summary */}
-                    {karigarWorkSummary && (
-                      <div className="create-payable-summary-card">
-                        <h3 className="create-payable-card-title">Karigar Completed Work Summary</h3>
-                        <div className="create-payable-summary-grid">
-                          <div className="create-payable-summary-item">
-                            <span className="create-payable-summary-label">Name</span>
-                            <span className="create-payable-summary-value">{karigarWorkSummary.name}</span>
-                          </div>
-                          <div className="create-payable-summary-item">
-                            <span className="create-payable-summary-label">Karigar ID</span>
-                            <span className="create-payable-summary-value">{karigarWorkSummary.id}</span>
-                          </div>
-                          <div className="create-payable-summary-item">
-                            <span className="create-payable-summary-label">Completed Lots</span>
-                            <span className="create-payable-summary-value">{karigarWorkSummary.totalLots}</span>
-                          </div>
-                          <div className="create-payable-summary-item">
-                            <span className="create-payable-summary-label">Completed Shades</span>
-                            <span className="create-payable-summary-value">{karigarWorkSummary.completedShades || 0}</span>
-                          </div>
-                          <div className="create-payable-summary-item">
-                            <span className="create-payable-summary-label">Total Quantity</span>
-                            <span className="create-payable-summary-value">{karigarWorkSummary.totalQuantity}</span>
-                          </div>
-                          <div className="create-payable-summary-item">
-                            <span className="create-payable-summary-label">Total Amount</span>
-                            <span className="create-payable-summary-amount">₹{karigarWorkSummary.totalAmount.toLocaleString()}</span>
-                          </div>
-                        </div>
-                        {rateList.length > 0 && (
-                          <div className="create-payable-rate-list-info">
-                            {/* <span className="create-payable-rate-list-badge">✓ Rates from Master List</span> */}
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </>
                 ) : payableType === 'supplier' ? (
                   <div className="create-payable-card">
@@ -1528,16 +1369,13 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
                             payeeId: e.target.value,
                             payeeName: supplier?.name || '',
                             category: 'Raw Material',
-                            description: supplier ? `Payment for ${supplier.material}` : ''
                           });
                         }}
                         required
                       >
                         <option value="">Choose Supplier</option>
                         {suppliers.map(s => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} - {s.material}
-                          </option>
+                          <option key={s.id} value={s.id}>{s.name}</option>
                         ))}
                       </select>
                     </div>
@@ -1555,7 +1393,6 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
                         className="create-payable-input"
                         value={formData.payeeName}
                         onChange={handleInputChange}
-                        placeholder="Enter payee name"
                         required
                       />
                     </div>
@@ -1563,640 +1400,193 @@ export default function CreatePayable({ onBack, supervisor, onNavigate }) {
                 )}
               </div>
 
-              {/* Right Column - Shade Selection Area with Lot Numbers */}
               <div className="create-payable-right-column">
-                {payableType === 'karigar' && (
-                  <>
-                    {Object.keys(shadeWiseLots).length > 0 ? (
-                      <>
-                        {/* Completed Work Summary */}
-                        <div className="create-payable-completed-summary">
-                          <span className="create-payable-completed-summary-icon">✅</span>
-                          <span className="create-payable-completed-summary-text">
-                            Showing {Object.keys(shadeWiseLots).length} shade(s) with completed work
-                          </span>
-                          <span className="create-payable-completed-lots-count">
-                            Total {Object.values(shadeWiseLots).reduce((sum, s) => sum + s.lots.length, 0)} completed lots
-                          </span>
-                        </div>
-
-                        <div className="create-payable-card">
-                          <div className="create-payable-card-header">
-                            <h3 className="create-payable-card-title">Completed Work by Shade</h3>
-                            <button
-                              type="button"
-                              onClick={handleSelectAllShades}
-                              className="create-payable-select-all-button"
-                            >
-                              {selectedShades.length === Object.keys(shadeWiseLots).length 
-                                ? 'Deselect All' 
-                                : 'Select All'
-                              }
-                            </button>
-                          </div>
-
-                          <div className="create-payable-shade-list">
-                            {Object.entries(shadeWiseLots).map(([shade, data]) => (
-                              <div key={shade} className="create-payable-shade-item-wrapper">
-                                <div
-                                  className={`create-payable-shade-item ${
-                                    selectedShades.includes(shade) ? 'selected' : ''
-                                  } ${expandedShade === shade ? 'expanded' : ''}`}
-                                >
-                                  <div className="create-payable-shade-item-header" onClick={() => toggleShadeExpand(shade)}>
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedShades.includes(shade)}
-                                      onChange={(e) => {
-                                        e.stopPropagation();
-                                        handleShadeSelection(shade);
-                                      }}
-                                      className="create-payable-shade-checkbox"
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                    <span className="create-payable-shade-name">{shade}</span>
-                                    <span className="create-payable-completed-badge">✓ {data.lots.length} Lots</span>
-                                    <span className="create-payable-lot-numbers-preview">
-                                      {data.lotNumbers.slice(0, 2).join(', ')}
-                                      {data.lotNumbers.length > 2 && ` +${data.lotNumbers.length - 2} more`}
-                                    </span>
-                                    <span className="create-payable-expand-icon">
-                                      {expandedShade === shade ? '▼' : '▶'}
-                                    </span>
-                                  </div>
-                                  
-                                  <div className="create-payable-shade-details">
-                                    <span>Total Lots: {data.lotNumbers.join(', ')}</span>
-                                  </div>
-
-                                  {/* Lot Selection Section */}
-                                  {expandedShade === shade && (
-                                    <div className="create-payable-lot-selection-section">
-                                      <div className="create-payable-lot-selection-header">
-                                        <span className="create-payable-lot-selection-title">Select Lots:</span>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleSelectAllLots(shade)}
-                                          className="create-payable-select-all-lots-button"
-                                        >
-                                          {selectedLots[shade]?.length === data.lots.length 
-                                            ? 'Deselect All' 
-                                            : 'Select All'
-                                          }
-                                        </button>
-                                      </div>
-                                      <div className="create-payable-lot-checkbox-list">
-                                        {data.lots.map((lot) => (
-                                          <label key={lot.lotNumber} className="create-payable-lot-checkbox-item">
-                                            <input
-                                              type="checkbox"
-                                              checked={selectedLots[shade]?.includes(lot.lotNumber) || false}
-                                              onChange={() => handleLotSelection(shade, lot.lotNumber)}
-                                              className="create-payable-lot-checkbox"
-                                            />
-                                            <span className="create-payable-lot-checkbox-label">
-                                              <strong>Lot {lot.lotNumber}</strong> - 
-                                              Qty: {lot.completedQuantity || lot.quantity} pcs @ 
-                                              ₹{lot.rate.toFixed(2)} = ₹{lot.totalAmount.toFixed(2)}
-                                              <span className="create-payable-lot-checkbox-details">
-                                                <br/>
-                                                <small>
-                                                  {lot.brand} | {lot.fabric} | {lot.style}
-                                                </small>
-                                              </span>
-                                            </span>
-                                          </label>
-                                        ))}
-                                      </div>
-
-                                      {/* Rate Information Summary */}
-                                      <div className="create-payable-rate-info">
-                                        <span className="create-payable-rate-label">Rate from list: </span>
-                                        <span className="create-payable-rate-value">₹{data.rateInfo?.rate?.toFixed(2) || '0.00'}/pc</span>
-                                        {data.rateInfo?.source === 'assignment' && (
-                                          <span className="create-payable-rate-source">(using default rate)</span>
-                                        )}
-                                        {data.rateInfo?.source === 'rateList' && (
-                                          <span className="create-payable-rate-source-success">(from master list)</span>
-                                        )}
-                                      </div>
+                {payableType === 'karigar' && Object.keys(shadeWiseLots).length > 0 && (
+                  <div className="create-payable-card">
+                    <div className="create-payable-card-header">
+                      <h3 className="create-payable-card-title">Completed Work by Shade</h3>
+                      <button type="button" onClick={handleSelectAllShades} className="create-payable-select-all-button">
+                        {selectedShades.length === Object.keys(shadeWiseLots).length ? 'Deselect All' : 'Select All'}
+                      </button>
+                    </div>
+                    
+                    {/* Table format for Completed Work by Shade */}
+                    <div className="create-payable-shade-table-container">
+                      <table className="create-payable-shade-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '40px' }}>Select</th>
+                            <th>Shade Name</th>
+                            <th>Lot Numbers</th>
+                            <th>Total Qty</th>
+                            <th>Rate</th>
+                            <th>Total Amount</th>
+                            <th style={{ width: '50px' }}>Expand</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(shadeWiseLots).map(([shade, data]) => (
+                            <React.Fragment key={shade}>
+                              <tr className={`create-payable-shade-table-row ${selectedShades.includes(shade) ? 'selected' : ''}`}>
+                                <td className="create-payable-table-checkbox">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedShades.includes(shade)}
+                                    onChange={() => handleShadeSelection(shade)}
+                                  />
+                                 </td>
+                                <td className="create-payable-shade-name-cell">{shade}</td>
+                                <td className="create-payable-lot-numbers-cell">{data.lotNumbers.join(', ')}</td>
+                                <td className="create-payable-quantity-cell">{data.totalQuantity}</td>
+                                <td className="create-payable-rate-cell">₹{data.lots[0]?.rate?.toFixed(2) || '0'}</td>
+                                <td className="create-payable-amount-cell">₹{data.totalAmount.toLocaleString()}</td>
+                                <td className="create-payable-expand-cell">
+                                  <button 
+                                    className="create-payable-expand-table-button"
+                                    onClick={() => toggleShadeExpand(shade)}
+                                  >
+                                    {expandedShade === shade ? '▼' : '▶'}
+                                  </button>
+                                </td>
+                              </tr>
+                              {expandedShade === shade && (
+                                <tr className="create-payable-lots-expanded-row">
+                                  <td colSpan="7">
+                                    <div className="create-payable-lots-table-container">
+                                      <table className="create-payable-lots-table">
+                                        <thead>
+                                          <tr>
+                                            <th style={{ width: '40px' }}>Select</th>
+                                            <th>Lot Number</th>
+                                            <th>Brand/Style</th>
+                                            <th>Quantity</th>
+                                            <th>Rate (₹)</th>
+                                            <th>Amount (₹)</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {data.lots.map((lot) => (
+                                            <tr key={lot.lotNumber}>
+                                              <td className="create-payable-table-checkbox">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={selectedLots[shade]?.includes(lot.lotNumber) || false}
+                                                  onChange={() => handleLotSelection(shade, lot.lotNumber)}
+                                                />
+                                              </td>
+                                              <td>{lot.lotNumber}</td>
+                                              <td>{lot.brand} {lot.style}</td>
+                                              <td>{lot.completedQuantity || lot.quantity || 0}</td>
+                                              <td>₹{lot.rate?.toFixed(2) || '0'}</td>
+                                              <td>₹{lot.totalAmount.toLocaleString()}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
                                     </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Selected Summary */}
-                          {Object.keys(selectedLots).length > 0 && (
-                            <div className="create-payable-selected-summary">
-                              <div className="create-payable-selected-summary-row">
-                                <span>Selected Lots: {
-                                  Object.values(selectedLots).reduce((sum, lots) => sum + lots.length, 0)
-                                }</span>
-                                <span>Total Qty: {calculateTotalQuantity()}</span>
-                                <span className="create-payable-selected-total">
-                                  ₹{calculateTotalAmount().toLocaleString()}
-                                </span>
-                              </div>
-                              
-                              <button
-                                type="button"
-                                onClick={handleCreatePayment}
-                                className="create-payable-create-payment-button"
-                              >
-                                Create Payment for Selected Lots
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    ) : selectedKarigar && (
-                      <div className="create-payable-no-completed-work">
-                        <span className="create-payable-no-work-icon">📭</span>
-                        <h3 className="create-payable-no-work-title">No Completed Work Found</h3>
-                        <p className="create-payable-no-work-text">
-                          No completed lots found for this karigar. 
-                          This could be because:
-                        </p>
-                        <ul className="create-payable-no-work-list">
-                          <li>The lots are not marked as "Completed" in the status column</li>
-                          <li>The karigar ID doesn't match exactly</li>
-                          <li>There are no assignments for this karigar</li>
-                        </ul>
-                        <div className="create-payable-status-example">
-                          <span className="create-payable-status-example-title">Required status:</span>
-                          <span className="create-payable-status-badge-example">status = "completed"</span>
-                        </div>
-                        <button 
-                          className="create-payable-refresh-button"
-                          onClick={() => {
-                            loadKarigarAssignments();
-                            loadKarigarProfiles();
-                          }}
-                        >
-                          🔄 Refresh Data
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    {Object.keys(selectedLots).length > 0 && (
+                      <div className="create-payable-selected-summary">
+                        <button type="button" onClick={handleCreatePayment} className="create-payable-create-payment-button">
+                          Create Payment for Selected Lots (₹{calculateTotalAmount().toLocaleString()})
                         </button>
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Payment Details Section */}
             {(formData.payeeName || Object.keys(selectedLots).length > 0) && (
               <form onSubmit={submitPayable} className="create-payable-payment-section">
                 <h2 className="create-payable-section-title">Payment Details</h2>
-                
                 <div className="create-payable-payment-grid">
-                  {/* Left Column - Basic Details */}
                   <div className="create-payable-payment-column">
-                    <div className="create-payable-field-row">
-                      <div className="create-payable-field">
-                        <label className="create-payable-label">Amount (₹) <span className="create-payable-required">*</span></label>
-                        <input
-                          type="number"
-                          name="amount"
-                          className="create-payable-input"
-                          value={formData.amount}
-                          onChange={handleInputChange}
-                          placeholder="0.00"
-                          min="0"
-                          step="0.01"
-                          required
-                        />
-                      </div>
-                      <div className="create-payable-field">
-                        <label className="create-payable-label">Due Date <span className="create-payable-required">*</span></label>
-                        <input
-                          type="date"
-                          name="dueDate"
-                          className="create-payable-input"
-                          value={formData.dueDate}
-                          onChange={handleInputChange}
-                          required
-                        />
-                      </div>
+                    <div className="create-payable-field">
+                      <label className="create-payable-label">Amount (₹) <span className="create-payable-required">*</span></label>
+                      <input type="number" name="amount" className="create-payable-input" value={formData.amount} onChange={handleInputChange} required />
                     </div>
-
-                    <div className="create-payable-field-row">
-                      <div className="create-payable-field">
-                        <label className="create-payable-label">Category</label>
-                        <select
-                          name="category"
-                          className="create-payable-select"
-                          value={formData.category}
-                          onChange={handleInputChange}
-                        >
-                          <option value="">Select category</option>
-                          {payableType === 'karigar' && (
-                            <>
-                              <option value="Wages">Wages</option>
-                              <option value="Advance">Advance</option>
-                            </>
-                          )}
-                          {payableType === 'supplier' && (
-                            <>
-                              <option value="Raw Material">Raw Material</option>
-                              <option value="Accessories">Accessories</option>
-                              <option value="Packaging">Packaging</option>
-                            </>
-                          )}
-                          {payableType === 'operational' && (
-                            <>
-                              <option value="Utilities">Utilities</option>
-                              <option value="Rent">Rent</option>
-                              <option value="Transport">Transport</option>
-                            </>
-                          )}
-                        </select>
-                      </div>
-                      <div className="create-payable-field">
-                        <label className="create-payable-label">Reference No.</label>
-                        <input
-                          type="text"
-                          name="reference"
-                          className="create-payable-input"
-                          value={formData.reference}
-                          onChange={handleInputChange}
-                          placeholder="INV-001"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="create-payable-field-row">
-                      <div className="create-payable-field">
-                        <label className="create-payable-label">Status</label>
-                        <select
-                          name="status"
-                          className="create-payable-select"
-                          value={formData.status}
-                          onChange={handleInputChange}
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="paid">Paid</option>
-                        </select>
-                      </div>
-                      {formData.status === 'paid' && (
-                        <div className="create-payable-field">
-                          <label className="create-payable-label">Payment Date</label>
-                          <input
-                            type="date"
-                            name="paymentDate"
-                            className="create-payable-input"
-                            value={formData.paymentDate}
-                            onChange={handleInputChange}
-                          />
-                        </div>
-                      )}
+                    <div className="create-payable-field">
+                      <label className="create-payable-label">Due Date <span className="create-payable-required">*</span></label>
+                      <input type="date" name="dueDate" className="create-payable-input" value={formData.dueDate} onChange={handleInputChange} required />
                     </div>
                   </div>
-
-                  {/* Right Column - Description */}
                   <div className="create-payable-payment-column">
                     <div className="create-payable-field">
-                      <label className="create-payable-label">Description</label>
-                      <textarea
-                        name="description"
-                        className="create-payable-textarea"
-                        value={formData.description}
-                        onChange={handleInputChange}
-                        placeholder="Enter payment description..."
-                        rows="4"
-                      />
-                    </div>
-                    
-                    <div className="create-payable-field">
-                      <label className="create-payable-label">Notes</label>
-                      <textarea
-                        name="notes"
-                        className="create-payable-textarea"
-                        value={formData.notes}
-                        onChange={handleInputChange}
-                        placeholder="Additional notes..."
-                        rows="4"
-                      />
+                      <label className="create-payable-label">Category</label>
+                      <select name="category" className="create-payable-select" value={formData.category} onChange={handleInputChange}>
+                        <option value="">Select category</option>
+                        <option value="Wages">Wages</option>
+                        <option value="Advance">Advance</option>
+                      </select>
                     </div>
                   </div>
                 </div>
-
-                {/* Form Actions */}
                 <div className="create-payable-form-actions">
-                  <button type="button" className="create-payable-cancel-button" onClick={resetForm}>
-                    Clear Form
-                  </button>
+                  <button type="button" className="create-payable-cancel-button" onClick={resetForm}>Clear Form</button>
                   <button type="submit" className="create-payable-submit-button" disabled={submitting}>
-                    {submitting ? (
-                      <>
-                        <span className="create-payable-spinner"></span>
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <span>✓</span>
-                        Create & Generate Slip
-                      </>
-                    )}
+                    {submitting ? 'Creating...' : 'Create & Download PDF'}
                   </button>
                 </div>
               </form>
             )}
           </div>
         ) : (
-          /* View Module - Keep existing view module code */
           <div className="create-payable-module-content">
-            {/* Filters */}
             <div className="create-payable-filters-bar">
-              <div className="create-payable-search-box">
-                <span className="create-payable-search-icon">🔍</span>
-                <input
-                  type="text"
-                  className="create-payable-search-input"
-                  placeholder="Search payables..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              
-              <select
-                className="create-payable-filter-select"
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-              >
+              <input type="text" placeholder="Search payables..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                 <option value="all">All Status</option>
                 <option value="pending">Pending</option>
                 <option value="paid">Paid</option>
-                <option value="overdue">Overdue</option>
               </select>
-
-              <div className="create-payable-date-range">
-                <input
-                  type="date"
-                  className="create-payable-date-input"
-                  value={dateRange.start}
-                  onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-                />
-                <span className="create-payable-date-separator">→</span>
-                <input
-                  type="date"
-                  className="create-payable-date-input"
-                  value={dateRange.end}
-                  onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-                />
-              </div>
             </div>
-
-            {/* Stats Cards */}
-            <div className="create-payable-stats-grid">
-              <div className="create-payable-stat-card">
-                <div className="create-payable-stat-icon">💰</div>
-                <div className="create-payable-stat-info">
-                  <span className="create-payable-stat-label">Total Payables</span>
-                  <span className="create-payable-stat-value">₹{totals.total.toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="create-payable-stat-card">
-                <div className="create-payable-stat-icon">⏳</div>
-                <div className="create-payable-stat-info">
-                  <span className="create-payable-stat-label">Pending</span>
-                  <span className="create-payable-stat-value">₹{totals.pending.toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="create-payable-stat-card">
-                <div className="create-payable-stat-icon">✅</div>
-                <div className="create-payable-stat-info">
-                  <span className="create-payable-stat-label">Paid</span>
-                  <span className="create-payable-stat-value">₹{totals.paid.toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="create-payable-stat-card">
-                <div className="create-payable-stat-icon">⚠️</div>
-                <div className="create-payable-stat-info">
-                  <span className="create-payable-stat-label">Overdue</span>
-                  <span className="create-payable-stat-value">₹{totals.overdue.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Table */}
-            {loading ? (
-              <div className="create-payable-loading-state">
-                <div className="create-payable-spinner"></div>
-                <p>Loading payables...</p>
-              </div>
-            ) : (
-              <div className="create-payable-table-container">
-                <table className="create-payable-table">
-                  <thead>
-                    <tr>
-                      <th className="create-payable-th">ID</th>
-                      <th className="create-payable-th">Type</th>
-                      <th className="create-payable-th">Payee</th>
-                      <th className="create-payable-th">Amount</th>
-                      <th className="create-payable-th">Due Date</th>
-                      <th className="create-payable-th">Status</th>
-                      <th className="create-payable-th">Category</th>
-                      <th className="create-payable-th">Actions</th>
+            <div className="create-payable-table-container">
+              <table className="create-payable-table">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Type</th><th>Payee</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPayables.map(payable => (
+                    <tr key={payable.id}>
+                      <td>{payable.payableId}</td>
+                      <td>{payable.payableType}</td>
+                      <td>{payable.payeeName}</td>
+                      <td>₹{payable.amount?.toLocaleString()}</td>
+                      <td>{new Date(payable.dueDate).toLocaleDateString()}</td>
+                      <td>{payable.status}</td>
+                      <td><button onClick={() => { setSelectedPayable(payable); setShowDetailsModal(true); }}>View</button></td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPayables.length > 0 ? (
-                      filteredPayables.map(payable => {
-                        const statusColor = getStatusColor(payable.status);
-                        return (
-                          <tr key={payable.id} className="create-payable-tr">
-                            <td className="create-payable-td">
-                              <span className="create-payable-payable-id">{payable.payableId}</span>
-                            </td>
-                            <td className="create-payable-td">
-                              <span className="create-payable-type-cell">{getTypeIcon(payable.payableType)}</span>
-                            </td>
-                            <td className="create-payable-td">
-                              <span className="create-payable-payee-name">{payable.payeeName}</span>
-                            </td>
-                            <td className="create-payable-td">
-                              <span className="create-payable-amount">₹{payable.amount?.toLocaleString()}</span>
-                            </td>
-                            <td className="create-payable-td">
-                              <span className="create-payable-date">
-                                {new Date(payable.dueDate).toLocaleDateString('en-IN', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric'
-                                })}
-                              </span>
-                            </td>
-                            <td className="create-payable-td">
-                              <span className="create-payable-status-badge" style={{backgroundColor: statusColor.bg, color: statusColor.text}}>
-                                <span className="create-payable-status-dot" style={{backgroundColor: statusColor.dot}}></span>
-                                {payable.status}
-                              </span>
-                            </td>
-                            <td className="create-payable-td">
-                              <span className="create-payable-category">{payable.category || '—'}</span>
-                            </td>
-                            <td className="create-payable-td">
-                              <button
-                                className="create-payable-view-button"
-                                onClick={() => {
-                                  setSelectedPayable(payable);
-                                  setShowDetailsModal(true);
-                                }}
-                              >
-                                View
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan="8" className="create-payable-empty-state">
-                          <span className="create-payable-empty-icon">📭</span>
-                          <p className="create-payable-empty-text">No payables found</p>
-                          <span className="create-payable-empty-subtext">Try adjusting your filters</span>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Payment Slip Modal */}
-      {showPaymentSlipModal && paymentSlipData && (
-        <div className="create-payable-modal-overlay" onClick={() => setShowPaymentSlipModal(false)}>
-          <div className="create-payable-modal create-payable-payment-slip-modal" onClick={e => e.stopPropagation()}>
-            <div className="create-payable-modal-header">
-              <h3 className="create-payable-modal-title">Download Payment Slip</h3>
-              <button className="create-payable-modal-close" onClick={() => setShowPaymentSlipModal(false)}>✕</button>
-            </div>
-            <div className="create-payable-modal-content">
-              {!paymentSlipData.saveSuccess && (
-                <div className="create-payable-payment-slip-warning">
-                  ⚠️ Payment was not saved to database. You can still download the slip.
-                </div>
-              )}
-              
-              <p style={{marginBottom: '20px', color: '#4B5563'}}>
-                Payment slip has been generated successfully. Choose download option:
-              </p>
-              
-              <div className="create-payable-payment-slip-buttons">
-                <button
-                  className="create-payable-submit-button create-payable-payment-slip-button"
-                  onClick={() => {
-                    downloadPaymentSlip(paymentSlipData.payable, paymentSlipData.lots);
-                    setShowPaymentSlipModal(false);
-                  }}
-                >
-                  📄 Download as HTML
-                </button>
-                
-                <button
-                  className="create-payable-submit-button create-payable-payment-slip-button create-payable-payment-slip-button-pdf"
-                  onClick={() => {
-                    downloadPaymentSlipAsPDF(paymentSlipData.payable, paymentSlipData.lots);
-                    setShowPaymentSlipModal(false);
-                  }}
-                >
-                  📑 Download as PDF (Print)
-                </button>
-                
-                <button
-                  className="create-payable-cancel-button"
-                  onClick={() => setShowPaymentSlipModal(false)}
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="create-payable-payment-slip-summary">
-                <strong>Payment Summary:</strong><br/>
-                Payee: {paymentSlipData.payable.payeeName}<br/>
-                Amount: ₹{paymentSlipData.totalAmount.toLocaleString()}<br/>
-                Selected Lots: {paymentSlipData.lots.reduce((sum, shade) => sum + shade.lots.length, 0)}<br/>
-                Total Qty: {paymentSlipData.totalQuantity}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Details Modal */}
       {showDetailsModal && selectedPayable && (
         <div className="create-payable-modal-overlay" onClick={() => setShowDetailsModal(false)}>
           <div className="create-payable-modal" onClick={e => e.stopPropagation()}>
             <div className="create-payable-modal-header">
-              <h3 className="create-payable-modal-title">Payable Details</h3>
-              <button className="create-payable-modal-close" onClick={() => setShowDetailsModal(false)}>✕</button>
+              <h3>Payable Details</h3>
+              <button onClick={() => setShowDetailsModal(false)}>✕</button>
             </div>
             <div className="create-payable-modal-content">
-              <div className="create-payable-detail-row">
-                <span className="create-payable-detail-label">Payable ID</span>
-                <span className="create-payable-detail-value">{selectedPayable.payableId}</span>
-              </div>
-              <div className="create-payable-detail-row">
-                <span className="create-payable-detail-label">Type</span>
-                <span className="create-payable-detail-value">{selectedPayable.payableType}</span>
-              </div>
-              <div className="create-payable-detail-row">
-                <span className="create-payable-detail-label">Payee</span>
-                <span className="create-payable-detail-value">{selectedPayable.payeeName}</span>
-              </div>
-              <div className="create-payable-detail-row">
-                <span className="create-payable-detail-label">Amount</span>
-                <span className="create-payable-detail-value" style={{fontWeight: '700', color: '#059669'}}>
-                  ₹{selectedPayable.amount?.toLocaleString()}
-                </span>
-              </div>
-              <div className="create-payable-detail-row">
-                <span className="create-payable-detail-label">Due Date</span>
-                <span className="create-payable-detail-value">{new Date(selectedPayable.dueDate).toLocaleDateString()}</span>
-              </div>
-              <div className="create-payable-detail-row">
-                <span className="create-payable-detail-label">Status</span>
-                <span className="create-payable-status-badge" style={{
-                  backgroundColor: getStatusColor(selectedPayable.status).bg,
-                  color: getStatusColor(selectedPayable.status).text
-                }}>
-                  <span className="create-payable-status-dot" style={{ backgroundColor: getStatusColor(selectedPayable.status).dot }}></span>
-                  {selectedPayable.status}
-                </span>
-              </div>
-              <div className="create-payable-detail-row">
-                <span className="create-payable-detail-label">Category</span>
-                <span className="create-payable-detail-value">{selectedPayable.category || '—'}</span>
-              </div>
-              {selectedPayable.description && (
-                <div className="create-payable-detail-row">
-                  <span className="create-payable-detail-label">Description</span>
-                  <span className="create-payable-detail-value">{selectedPayable.description}</span>
-                </div>
-              )}
-              {selectedPayable.reference && (
-                <div className="create-payable-detail-row">
-                  <span className="create-payable-detail-label">Reference</span>
-                  <span className="create-payable-detail-value">{selectedPayable.reference}</span>
-                </div>
-              )}
-              <div className="create-payable-detail-row">
-                <span className="create-payable-detail-label">Created By</span>
-                <span className="create-payable-detail-value">{selectedPayable.createdBy}</span>
-              </div>
-              <div className="create-payable-detail-row">
-                <span className="create-payable-detail-label">Created At</span>
-                <span className="create-payable-detail-value">{new Date(selectedPayable.createdAt).toLocaleString()}</span>
-              </div>
-            </div>
-            <div className="create-payable-modal-footer">
-              <button className="create-payable-modal-button" onClick={() => setShowDetailsModal(false)}>
-                Close
-              </button>
+              <p><strong>Payable ID:</strong> {selectedPayable.payableId}</p>
+              <p><strong>Payee:</strong> {selectedPayable.payeeName}</p>
+              <p><strong>Amount:</strong> ₹{selectedPayable.amount?.toLocaleString()}</p>
+              <p><strong>Status:</strong> {selectedPayable.status}</p>
             </div>
           </div>
         </div>

@@ -15,11 +15,11 @@ const SHEETS_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/va
 const GET_SHEETS_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}?key=${API_KEY}`;
 
 const GAS_WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbxAcQIKPzXy4oEkQ6hO8aSZjO3NtA0sSQxnc4UTMTreYHX39ueLguDz-bwX97HX3IFf/exec";
+  "https://script.google.com/macros/s/AKfycbxCMkgik6D7_Su6p5bOjAdWaqsvHe4KpTGWLvcwsnaPooHdA9LpfpSivV1qSlK1xjY2/exec";
 
 const EXISTING_LOTS_SHEET_ID = "1AhDU_LPVXJB-jZoeJ7gt7uZ2r1lLMRG5AJdZkYGVaUs";
 const EXISTING_LOTS_TAB_NAME = "Master List";
-const EXISTING_LOTS_RANGE = `${EXISTING_LOTS_TAB_NAME}!A:L`;
+const EXISTING_LOTS_RANGE = `${EXISTING_LOTS_TAB_NAME}!A:N`;
 
 /* Branding */
 const ORG_NAME = "Your Company";
@@ -90,88 +90,7 @@ function extractNumericValue(str) {
   return match ? parseFloat(match[0]) : 0;
 }
 
-function parseLotData(row, headers, sheetName) {
-  const lotData = {
-    submissionId: cleanText(row[0] || ""),
-    timestamp: cleanText(row[1] || ""),
-    submitter: cleanText(row[2] || ""),
-    category: cleanText(row[3] || sheetName),
-    displayCategory: cleanText(row[4] || ""),
-    subcategory: cleanText(row[5] || ""),
-    jacketType: cleanText(row[6] || ""),
-    lotNo: cleanText(row[7] || ""),
-    selections: [],
-    total: 0,
-    rawData: row,
-    sheetName: sheetName,
-    originalHeaders: headers
-  };
-
-  if (!lotData.lotNo) {
-    return null;
-  }
-
-  let totalIndex = -1;
-  for (let i = 0; i < headers.length; i++) {
-    const header = cleanText(headers[i] || "");
-    if (header.toLowerCase() === "total") {
-      totalIndex = i;
-      break;
-    }
-  }
-
-  if (totalIndex !== -1 && row[totalIndex]) {
-    lotData.total = extractNumericValue(row[totalIndex]);
-  }
-
-  const startCol = 8;
-  const endCol = totalIndex !== -1 ? totalIndex : row.length - 1;
-
-  for (let i = startCol; i < endCol; i++) {
-    const header = headers[i] || `Column_${i}`;
-    const cellValue = row[i];
-    
-    if (!cellValue) continue;
-    
-    const rawValue = String(cellValue).trim();
-    if (!rawValue || rawValue === "") continue;
-    
-    if (rawValue.includes('@')) {
-      const parsed = parseDetailsString(rawValue);
-      
-      if (parsed) {
-        lotData.selections.push({
-          attribute: cleanText(header),
-          option: parsed.attribute || "Default",
-          rate: parsed.rate,
-          qty: 1,
-          amount: parsed.amount,
-          rawValue: rawValue
-        });
-      }
-    }
-  }
-
-  return lotData;
-}
-
-function parseDetailsString(details) {
-  if (!details) return null;
-  
-  const detailsStr = String(details).trim();
-  const match = detailsStr.match(/([^@]+)@\s*[₹]\s*([\d.]+)\s*=\s*[₹]\s*([\d.]+)/);
-  if (match) {
-    return {
-      attribute: cleanText(match[1]),
-      rate: parseFloat(match[2]) || 0,
-      amount: parseFloat(match[3]) || 0
-    };
-  }
-  
-  return null;
-}
-
-// Parse selections from summary string
+// Parse selections from summary string - UPDATED to handle rate and amount
 function parseSelectionsFromSummary(summary) {
   if (!summary) return [];
   
@@ -186,92 +105,149 @@ function parseSelectionsFromSummary(summary) {
     if (colonIndex === -1) continue;
     
     const attribute = cleanText(trimmedPart.substring(0, colonIndex));
-    const rest = trimmedPart.substring(colonIndex + 1).trim();
+    let rest = trimmedPart.substring(colonIndex + 1).trim();
     
-    const parenMatch = rest.match(/(.+?)\s*\(₹([\d.]+)\)/);
-    if (parenMatch) {
-      const option = cleanText(parenMatch[1]);
-      const amount = parseFloat(parenMatch[2]);
-      
-      selections.push({
-        attribute: attribute,
-        option: option,
-        rate: amount,
-        qty: 1,
-        amount: amount
-      });
+    let qty = 1;
+    let rate = 0;
+    let amount = 0;
+    let option = rest;
+    
+    // Parse quantity (× symbol)
+    const qtyMatch = rest.match(/×(\d+)/);
+    if (qtyMatch) {
+      qty = parseInt(qtyMatch[1]);
+      rest = rest.replace(/×\d+\s*/, '');
     }
+    
+    // Parse rate (@₹ symbol)
+    const rateMatch = rest.match(/@₹([\d.]+)/);
+    if (rateMatch) {
+      rate = parseFloat(rateMatch[1]);
+      rest = rest.replace(/@₹[\d.]+\s*/, '');
+    }
+    
+    // Parse amount (₹ symbol in parentheses)
+    const amountMatch = rest.match(/\(₹([\d.]+)\)/);
+    if (amountMatch) {
+      amount = parseFloat(amountMatch[1]);
+      rest = rest.replace(/\s*\(₹[\d.]+\)\s*/, '');
+    }
+    
+    // If amount is provided but rate is 0, calculate rate from amount and qty
+    if (amount > 0 && rate === 0 && qty > 0) {
+      rate = amount / qty;
+    }
+    
+    option = cleanText(rest);
+    
+    selections.push({
+      attribute: attribute,
+      option: option,
+      rate: rate,
+      qty: qty,
+      amount: amount || (rate * qty)
+    });
   }
   
   return selections;
 }
 
-// Check if lot number already exists in Master List
-async function checkLotExistsInMasterList(lotNo) {
+// Calculate amount differences between current and previous selections
+function calculateAmountDifferences(currentSelections, previousSelections) {
+  if (!previousSelections || previousSelections.length === 0) {
+    return currentSelections.map(selection => ({
+      ...selection,
+      previousAmount: 0,
+      amountChange: selection.amount,
+      isChanged: true
+    }));
+  }
+  
+  const previousMap = new Map();
+  previousSelections.forEach(prev => {
+    const key = `${prev.attribute}|${prev.option}`;
+    previousMap.set(key, prev);
+  });
+  
+  return currentSelections.map(selection => {
+    const key = `${selection.attribute}|${selection.option}`;
+    const previous = previousMap.get(key);
+    
+    if (previous) {
+      const amountChange = selection.amount - previous.amount;
+      return {
+        ...selection,
+        previousAmount: previous.amount,
+        amountChange: amountChange,
+        isChanged: amountChange !== 0
+      };
+    } else {
+      return {
+        ...selection,
+        previousAmount: 0,
+        amountChange: selection.amount,
+        isChanged: true
+      };
+    }
+  });
+}
+
+// Fetch current rates for selections
+async function fetchCurrentRatesForSelections(selections, category, subcategory, jacketType) {
   try {
-    if (!lotNo) return { exists: false };
+    const res = await fetch(SHEETS_URL);
+    if (!res.ok) throw new Error(`Sheets API ${res.status}`);
+    const data = await res.json();
+    const values = data.values || [];
+    const [, ...body] = values;
     
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${EXISTING_LOTS_SHEET_ID}/values/${encodeURIComponent(EXISTING_LOTS_RANGE)}?key=${API_KEY}`;
+    const currentRates = body
+      .map((r) => ({
+        Category: (r[0] || "").trim(),
+        Attribute: (r[1] || "").trim(),
+        Option: (r[2] || "").trim(),
+        Rate: Number(r[3] || 0),
+        NeedsQty: String(r[4] || "").trim().toLowerCase() === "yes",
+        FullHalf: (r[5] || "").trim().toUpperCase(),
+        AttributeEnglish: (r[6] || "").trim(),
+        OptionEnglish: (r[7] || "").trim(),
+      }))
+      .filter((r) => r.Category && r.Attribute && r.Option);
     
-    const response = await fetch(url);
-    if (!response.ok) {
-      return { exists: false, error: `Failed to check existing lots: ${response.status}` };
-    }
-    
-    const data = await response.json();
-    const rows = data.values || [];
-    
-    if (rows.length < 2) {
-      return { exists: false };
-    }
-    
-    const headers = rows[0];
-    
-    // Find Lot No column - should be column I (index 8)
-    let lotNoColumnIndex = 8; // Default to column I
-    
-    for (let i = 0; i < headers.length; i++) {
-      const header = cleanText(headers[i] || "").toLowerCase();
-      if (header === "lot no" || header === "lotno" || header === "lot number") {
-        lotNoColumnIndex = i;
-        break;
+    const updatedSelections = selections.map(selection => {
+      let currentRate = selection.rate;
+      
+      let searchCategory = category;
+      if (category === "Jacket" && subcategory) {
+        searchCategory = subcategory;
       }
-    }
-    
-    const searchLotNo = String(lotNo).trim();
-    
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (row && row.length > lotNoColumnIndex) {
-        const existingLotNo = cleanText(row[lotNoColumnIndex] || "");
-        
-        if (existingLotNo === searchLotNo) {
-          return {
-            exists: true,
-            submissionId: cleanText(row[1] || "Unknown"),
-            submitter: cleanText(row[3] || "Unknown"),
-            timestamp: cleanText(row[2] || "Unknown"),
-            category: cleanText(row[4] || "Unknown"),
-            displayCategory: cleanText(row[5] || ""),
-            subcategory: cleanText(row[6] || ""),
-            jacketType: cleanText(row[7] || ""),
-            lotNo: existingLotNo,
-            total: extractNumericValue(row[9] || "0"),
-            selectionsSummary: row[11] || ""
-          };
-        }
+      
+      const rateRow = currentRates.find(r => 
+        r.Category === searchCategory && 
+        r.Attribute === selection.attribute && 
+        r.Option === selection.option &&
+        (r.FullHalf === jacketType?.toUpperCase() || !r.FullHalf || jacketType === undefined)
+      );
+      
+      if (rateRow) {
+        currentRate = rateRow.Rate;
       }
-    }
+      
+      return {
+        ...selection,
+        rate: currentRate,
+        amount: currentRate * selection.qty
+      };
+    });
     
-    return { exists: false };
-    
+    return updatedSelections;
   } catch (error) {
-    console.error("Error checking Master List:", error);
-    return { exists: false, error: error.message };
+    console.error("Error fetching current rates:", error);
+    return selections;
   }
 }
 
-// Fetch lot from Master List by number
+// Fetch lot from Master List by number - UPDATED to include rate history
 async function fetchLotFromMasterList(lotNo) {
   try {
     if (!lotNo) return null;
@@ -292,7 +268,6 @@ async function fetchLotFromMasterList(lotNo) {
     
     const headers = rows[0];
     
-    // Find Lot No column
     let lotNoColumnIndex = 8;
     for (let i = 0; i < headers.length; i++) {
       const header = cleanText(headers[i] || "").toLowerCase();
@@ -315,9 +290,29 @@ async function fetchLotFromMasterList(lotNo) {
           const subcategory = cleanText(row[6] || "");
           const jacketType = cleanText(row[7] || "");
           const selectionsSummary = row[11] || "";
+          const rateHistoryRaw = row[12] || "";
+          const revisionCount = row[13] || "1";
           
-          // Parse selections from summary
-          const selections = parseSelectionsFromSummary(selectionsSummary);
+          let rateHistory = [];
+          if (rateHistoryRaw) {
+            try {
+              rateHistory = JSON.parse(rateHistoryRaw);
+            } catch (e) {
+              console.error("Error parsing rate history:", e);
+            }
+          }
+          
+          let selections = parseSelectionsFromSummary(selectionsSummary);
+          
+          selections = await fetchCurrentRatesForSelections(
+            selections, 
+            displayCategory || category,
+            subcategory,
+            jacketType
+          );
+          
+          // Calculate total from selections
+          const calculatedTotal = selections.reduce((sum, s) => sum + (s.amount || 0), 0);
           
           return {
             lotNo: existingLotNo,
@@ -328,8 +323,11 @@ async function fetchLotFromMasterList(lotNo) {
             actualCategory: category,
             subcategory: subcategory,
             jacketType: jacketType,
-            total: extractNumericValue(row[9] || "0"),
+            total: calculatedTotal || extractNumericValue(row[9] || "0"),
             selections: selections,
+            rateHistory: rateHistory,
+            revisionCount: parseInt(revisionCount) || 1,
+            isUpdated: rateHistory.length > 0,
             rawData: row
           };
         }
@@ -337,359 +335,10 @@ async function fetchLotFromMasterList(lotNo) {
     }
     
     return null;
-    
   } catch (error) {
     console.error("Error fetching lot from Master List:", error);
     return null;
   }
-}
-
-async function fetchAllSheets() {
-  try {
-    const response = await fetch(GET_SHEETS_URL);
-    if (!response.ok) throw new Error(`Failed to fetch sheets: ${response.status}`);
-    const data = await response.json();
-    
-    const sheets = data.sheets.map(sheet => ({
-      name: sheet.properties.title,
-      sheetId: sheet.properties.sheetId,
-      index: sheet.properties.index
-    }));
-    
-    return sheets;
-  } catch (error) {
-    console.error("Error fetching sheets:", error);
-    throw error;
-  }
-}
-
-async function fetchSheetData(sheetName, range = 'A:H', retries = 3) {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(sheetName + '!' + range)}?key=${API_KEY}`;
-      
-      const response = await fetch(url);
-      
-      if (response.status === 429) {
-        if (i < retries) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
-          continue;
-        }
-      }
-      
-      if (!response.ok) {
-        if (i < retries) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          continue;
-        }
-        throw new Error(`Failed to fetch sheet data: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      return data.values || [];
-    } catch (error) {
-      if (i === retries) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-  }
-  return [];
-}
-
-function parseHeaders(rows) {
-  if (!rows || rows.length === 0) return [];
-  const headerRow = rows[0];
-  return headerRow.map(header => cleanText(header || ""));
-}
-
-async function fetchSpecificLot(category, lotNo) {
-  try {
-    if (!lotNo) return null;
-    
-    const sheetName = "Lower";
-    const lot = await searchLotInSheet(sheetName, lotNo);
-    
-    if (lot) {
-      return lot;
-    }
-    
-    return null;
-  } catch (error) {
-    console.error("Error fetching specific lot:", error);
-    return null;
-  }
-}
-
-async function searchLotInSheet(sheetName, lotNo) {
-  try {
-    const rows = await fetchSheetData(sheetName, 'A:ZZZ');
-    
-    if (!rows || rows.length < 2) {
-      return null;
-    }
-    
-    const headers = rows[0] || [];
-    
-    let totalPosition = -1;
-    for (let i = 0; i < headers.length; i++) {
-      if (cleanText(headers[i] || "").toLowerCase() === "total") {
-        totalPosition = i;
-        break;
-      }
-    }
-    
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (row && row.length > 7) {
-        const rowLotNo = cleanText(row[7] || "");
-        
-        if (rowLotNo === String(lotNo).trim()) {
-          const lotData = parseLotData(row, headers, sheetName);
-          return lotData;
-        }
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error(`Error searching in sheet ${sheetName}:`, error);
-    return null;
-  }
-}
-
-async function buildAndDownloadJPEG_Receipt_A4({
-  category,
-  billRows,
-  total,
-  submitterName,
-  lotNo,
-  checkedRows,
-  showEnglish = false,
-}) {
-  const DPI_SCALE = 2;
-  const PAGE_WIDTH = 794;
-  const PAGE_HEIGHT = 1123;
-  const PADDING = 40;
-  const LINE_H = 32;
-  const FONT_BODY = "16px 'Courier New', monospace";
-  const FONT_BOLD = "bold 16px Arial, sans-serif";
-  const FONT_HDR = "bold 26px Arial, sans-serif";
-
-  const ctxMeasure = document.createElement("canvas").getContext("2d");
-  ctxMeasure.font = FONT_BODY;
-
-  const wrapText = (ctx, text, maxW) => {
-    const words = String(text || "").split(/\s+/);
-    const lines = [];
-    let line = "";
-    for (const word of words) {
-      const testLine = line ? line + " " + word : word;
-      if (ctx.measureText(testLine).width <= maxW) {
-        line = testLine;
-      } else {
-        if (line) lines.push(line);
-        line = word;
-      }
-    }
-    if (line) lines.push(line);
-    return lines;
-  };
-
-  const col1 = PADDING;
-  const col2 = col1 + 180;
-  const col3 = col2 + 140;
-  const col4 = col3 + 80;
-  const col5 = col4 + 100;
-  const col6 = col5 + 80;
-  const col7 = PAGE_WIDTH - PADDING;
-  const labelWidth = col2 - col1 - 15;
-  const optionWidth = col3 - col2 - 16;
-
-  let rowCount = 0;
-  billRows.forEach((r) => {
-    const displayAttr = showEnglish && r.attrEnglish ? r.attrEnglish : r.attr;
-    const attrLines = wrapText(ctxMeasure, displayAttr, labelWidth);
-    const displayOpt = showEnglish && r.optEnglish ? r.optEnglish : (r.opt || "-");
-    const optLines = wrapText(ctxMeasure, displayOpt, optionWidth);
-    rowCount += Math.max(attrLines.length, optLines.length, 1);
-  });
-
-  const metaRows = 8;
-  const signatureGap = 5;
-  const tableHeight = (rowCount + metaRows + signatureGap) * LINE_H;
-  const canvasHeight = Math.max(PAGE_HEIGHT, tableHeight + PADDING * 2);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = PAGE_WIDTH * DPI_SCALE;
-  canvas.height = canvasHeight * DPI_SCALE;
-  const ctx = canvas.getContext("2d");
-
-  ctx.scale(DPI_SCALE, DPI_SCALE);
-  ctx.textBaseline = "alphabetic";
-  ctx.textAlign = "left";
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, PAGE_WIDTH, canvasHeight);
-
-  ctx.strokeStyle = "#000000";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(10, 10, PAGE_WIDTH - 20, canvasHeight - 20);
-
-  let y = PADDING;
-
-  const titleBoxH = 60;
-  const fullW = col7 - col1;
-  
-  ctx.lineWidth = 3;
-  ctx.strokeRect(col1, y, fullW, titleBoxH);
-  ctx.lineWidth = 1;
-  ctx.strokeRect(col1 + 4, y + 4, fullW - 8, titleBoxH - 8);
-
-  ctx.font = FONT_HDR;
-  ctx.fillStyle = "#000000";
-  const titleStr = `RATE LIST OF ${lotNo || "N/A"}`;
-  const titleW = ctx.measureText(titleStr).width;
-  ctx.fillText(titleStr, col1 + (fullW - titleW) / 2, y + 40);
-  
-  y += titleBoxH + 30;
-
-  ctx.font = "bold 16px Arial";
-  const { display } = nowISTParts();
-  
-  ctx.fillText(`CATEGORY :  ${(category || "-").toUpperCase()}`, col1, y);
-  const dateStr = `DATE: ${display}`;
-  const dateW = ctx.measureText(dateStr).width;
-  ctx.fillText(dateStr, col7 - dateW, y);
-  
-  y += LINE_H;
-  ctx.fillText(`SUBMITTER:  ${(submitterName || "-").toUpperCase()}`, col1, y);
-  
-  y += LINE_H * 1.5;
-
-  const crisp = (v) => Math.round(v) + 0.5;
-  const vline = (x, y1, y2) => {
-    ctx.beginPath();
-    ctx.moveTo(crisp(x), crisp(y1));
-    ctx.lineTo(crisp(x), crisp(y2));
-    ctx.stroke();
-  };
-
-  const COLS = [col1, col2, col3, col4, col5, col6, col7];
-
-  ctx.font = FONT_BOLD;
-  ctx.fillStyle = "#f2f2f2";
-  ctx.fillRect(col1, y, col7 - col1, LINE_H);
-  ctx.fillStyle = "#000000";
-  ctx.strokeRect(col1, y, col7 - col1, LINE_H);
-
-  for (let i = 1; i < COLS.length; i++) {
-    if (i < COLS.length - 1) vline(COLS[i], y, y + LINE_H);
-  }
-
-  ctx.fillText("Attribute", col1 + 8, y + 22);
-  ctx.fillText("Option", col2 + 8, y + 22);
-  ctx.fillText("Rate", col3 + 8, y + 22);
-  ctx.fillText("Qty", col4 + 8, y + 22);
-  ctx.fillText("Amount", col5 + 8, y + 22);
-  ctx.fillText("Check", col6 + 20, y + 22);
-  
-  y += LINE_H;
-
-  ctx.font = "16px Arial";
-  billRows.forEach((r) => {
-    const displayAttr = showEnglish && r.attrEnglish ? r.attrEnglish : r.attr;
-    const displayOpt = showEnglish && r.optEnglish ? r.optEnglish : (r.opt || "-");
-    
-    const attrLines = wrapText(ctx, displayAttr, labelWidth);
-    const optLines = wrapText(ctx, displayOpt, optionWidth);
-    
-    const rowHeight = Math.max(attrLines.length, optLines.length, 1) * LINE_H;
-
-    ctx.strokeRect(col1, y, col7 - col1, rowHeight);
-    for (let i = 1; i < COLS.length; i++) {
-      if (i < COLS.length - 1) vline(COLS[i], y, y + rowHeight);
-    }
-
-    attrLines.forEach((line, j) => {
-      const yPos = y + (j + 1) * LINE_H - 8;
-      ctx.fillText(line, col1 + 8, yPos);
-    });
-
-    optLines.forEach((line, j) => {
-      const yPos = y + (j + 1) * LINE_H - 8;
-      ctx.fillText(line, col2 + 8, yPos);
-    });
-
-    const rateStr = formatINR(r.rate);
-    const rateWidth = ctx.measureText(rateStr).width;
-    ctx.fillText(rateStr, col3 + (col4 - col3 - rateWidth) / 2, y + 22);
-
-    const qtyStr = String(r.qty);
-    const qtyWidth = ctx.measureText(qtyStr).width;
-    ctx.fillText(qtyStr, col4 + (col5 - col4 - qtyWidth) / 2, y + 22);
-
-    const amtStr = formatINR(r.amount);
-    const amountWidth = ctx.measureText(amtStr).width;
-    ctx.fillText(amtStr, col5 + (col6 - col5 - amountWidth) / 2, y + 22);
-
-    const isChecked = checkedRows && checkedRows.includes(r.id);
-    if (isChecked) {
-      ctx.fillStyle = "#000000";
-      ctx.fillRect(col6 + 24, y + 8, 12, 12);
-    }
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(col6 + 24, y + 8, 12, 12);
-    ctx.fillStyle = "#000000";
-
-    y += rowHeight;
-  });
-
-  ctx.font = FONT_BOLD;
-  ctx.strokeRect(col1, y, col7 - col1, LINE_H);
-  for (let i = 1; i < COLS.length; i++) {
-    if (i < COLS.length - 1) vline(COLS[i], y, y + LINE_H);
-  }
-  ctx.fillText("TOTAL AMOUNT", col1 + 8, y + 22);
-  const totalStr = formatINR(total);
-  const totalAmountWidth = ctx.measureText(totalStr).width;
-  ctx.fillText(totalStr, col5 + (col6 - col5 - totalAmountWidth) / 2, y + 22);
-
-  y += LINE_H * 2;
-
-  const footerSpace = 120;
-  if (y < (canvasHeight / DPI_SCALE) - footerSpace - PADDING) {
-      y = (canvasHeight / DPI_SCALE) - footerSpace - PADDING;
-  }
-
-  const BOX_GAP = 12;
-  const totalW = col7 - col1;
-  const boxW = Math.floor((totalW - BOX_GAP * 3) / 4);
-  const boxH = 80;
-
-  function drawSignatureBox(x, yTop, w, h, labelText) {
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, yTop, w, h);
-    const lineY = yTop + 50;
-    ctx.beginPath();
-    ctx.moveTo(x + 10, lineY);
-    ctx.lineTo(x + w - 10, lineY);
-    ctx.stroke();
-    const labelW = ctx.measureText(labelText).width;
-    ctx.fillText(labelText, x + (w - labelW) / 2, lineY + 20);
-  }
-
-  drawSignatureBox(col1, y, boxW, boxH, "Pintu");
-  drawSignatureBox(col1 + (boxW + BOX_GAP), y, boxW, boxH, "Mohit Sir");
-  drawSignatureBox(col1 + (boxW + BOX_GAP) * 2, y, boxW, boxH, "Submitter");
-
-  const acX = col1 + (boxW + BOX_GAP) * 3;
-  ctx.strokeRect(acX, y, boxW, boxH);
-  ctx.font = "bold 12px Arial";
-  ctx.fillText("Any Change: Yes/No", acX + 8, y + 20);
-  ctx.strokeRect(acX + 8, y + 28, boxW - 16, 40);
-
-  const filename = `RateList_${lotNo}.jpg`;
-  const jpeg = canvas.toDataURL("image/jpeg", 0.9);
-  downloadDataUrl(jpeg, filename);
 }
 
 function useClickOutside(ref, onOutside) {
@@ -735,6 +384,7 @@ function LotLoader({ onLoadLot, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [foundLot, setFoundLot] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const handleSearch = async () => {
     if (!lotNumber.trim()) {
@@ -849,7 +499,14 @@ function LotLoader({ onLoadLot, onClose }) {
 
           {foundLot && (
             <div className="rc2-lot-preview">
-              <h4 className="rc2-preview-title">Lot Found</h4>
+              <h4 className="rc2-preview-title">
+                Lot Found
+                {foundLot.isUpdated && (
+                  <span className="rc2-updated-badge">
+                    Updated {foundLot.revisionCount - 1} time{foundLot.revisionCount - 1 !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </h4>
               <div className="rc2-lot-card">
                 <div className="rc2-lot-header">
                   <span className="rc2-lot-badge">Lot #{foundLot.lotNo}</span>
@@ -879,12 +536,41 @@ function LotLoader({ onLoadLot, onClose }) {
                     <span className="rc2-detail-value">{formatINR(foundLot.total)}</span>
                   </div>
                 </div>
+                
+                {foundLot.rateHistory && foundLot.rateHistory.length > 0 && (
+                  <div className="rc2-lot-history">
+                    <button 
+                      className="rc2-history-toggle"
+                      onClick={() => setShowHistory(!showHistory)}
+                    >
+                      {showHistory ? "▼" : "▶"} Rate History ({foundLot.rateHistory.length} previous revision{foundLot.rateHistory.length !== 1 ? 's' : ''})
+                    </button>
+                    {showHistory && (
+                      <div className="rc2-history-list">
+                        {foundLot.rateHistory.map((history, idx) => (
+                          <div key={idx} className="rc2-history-item">
+                            <div className="rc2-history-header">
+                              <span className="rc2-history-version">Version {idx + 1}</span>
+                              <span className="rc2-history-date">{history.timestamp}</span>
+                            </div>
+                            <div className="rc2-history-details">
+                              <div>Submitter: {history.submitter}</div>
+                              <div>Total: {formatINR(history.total)}</div>
+                              <div>Items: {history.selections?.length || 0}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
                 {foundLot.selections && foundLot.selections.length > 0 && (
                   <div className="rc2-lot-selections-preview">
-                    <strong>Selections:</strong>
+                    <strong>Current Selections:</strong>
                     <ul>
                       {foundLot.selections.slice(0, 5).map((sel, idx) => (
-                        <li key={idx}>{sel.attribute}: {sel.option}</li>
+                        <li key={idx}>{sel.attribute}: {sel.option} - {formatINR(sel.amount)}</li>
                       ))}
                       {foundLot.selections.length > 5 && (
                         <li>+{foundLot.selections.length - 5} more</li>
@@ -1161,7 +847,7 @@ function LoadingOverlay({
   );
 }
 
-function SuccessOverlay({ submitterName, totalINR, onClose }) {
+function SuccessOverlay({ submitterName, totalINR, isUpdate, onClose }) {
   useEffect(() => {
     launchConfetti();
   }, []);
@@ -1176,9 +862,10 @@ function SuccessOverlay({ submitterName, totalINR, onClose }) {
           </svg>
         </div>
 
-        <h3 className="rc2-fs-title">Submitted successfully!</h3>
+        <h3 className="rc2-fs-title">{isUpdate ? "Updated successfully!" : "Submitted successfully!"}</h3>
         <p className="rc2-fs-sub">
           Thank you{submitterName ? `, ${submitterName}` : ""}! Your document has been created.
+          {isUpdate && " Previous rates have been saved to history."}
         </p>
         {typeof totalINR === "string" && (
           <p className="rc2-fs-sub" style={{marginTop: 6}}>
@@ -1220,6 +907,308 @@ function CategoryCard({ category, onClick, isSelected = false, icon = "📁" }) 
   );
 }
 
+async function buildAndDownloadJPEG_Receipt_A4({
+  category,
+  billRows,
+  total,
+  submitterName,
+  lotNo,
+  checkedRows,
+  showEnglish = false,
+  previousRates = null,
+  revisionCount = 1,
+  amountDifferences = null,
+  previousTotal = 0,
+}) {
+  const DPI_SCALE = 2;
+  const PAGE_WIDTH = 794;
+  const PAGE_HEIGHT = 1123;
+  const PADDING = 30;
+  const LINE_H = 28;
+  const FONT_BODY = "16px 'Courier New', monospace";
+  const FONT_BOLD = "bold 16px Arial, sans-serif";
+  const FONT_HDR = "bold 26px Arial, sans-serif";
+  const FONT_NOTE = "12px Arial, sans-serif";
+
+  const ctxMeasure = document.createElement("canvas").getContext("2d");
+  ctxMeasure.font = FONT_BODY;
+
+  const wrapText = (ctx, text, maxW) => {
+    const words = String(text || "").split(/\s+/);
+    const lines = [];
+    let line = "";
+    for (const word of words) {
+      const testLine = line ? line + " " + word : word;
+      if (ctx.measureText(testLine).width <= maxW) {
+        line = testLine;
+      } else {
+        if (line) lines.push(line);
+        line = word;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  };
+
+  const col1 = PADDING;
+  const col2 = col1 + 180;
+  const col3 = col2 + 140;
+  const col4 = col3 + 80;
+  const col5 = col4 + 100;
+  const col6 = col5 + 80;
+  const col7 = PAGE_WIDTH - PADDING;
+  const labelWidth = col2 - col1 - 15;
+  const optionWidth = col3 - col2 - 16;
+
+  let hasChanges = amountDifferences && amountDifferences.some(d => d.isChanged);
+  
+  let rowCount = 0;
+  billRows.forEach((r) => {
+    const displayAttr = showEnglish && r.attrEnglish ? r.attrEnglish : r.attr;
+    const attrLines = wrapText(ctxMeasure, displayAttr, labelWidth);
+    const displayOpt = showEnglish && r.optEnglish ? r.optEnglish : (r.opt || "-");
+    const optLines = wrapText(ctxMeasure, displayOpt, optionWidth);
+    rowCount += Math.max(attrLines.length, optLines.length, 1);
+  });
+
+  const metaRows = 10;
+  const signatureGap = 5;
+  const changesHeaderRows = hasChanges ? 3 : 0;
+  const tableHeight = (rowCount + metaRows + signatureGap + changesHeaderRows) * LINE_H;
+  const canvasHeight = Math.max(PAGE_HEIGHT, tableHeight + PADDING * 2);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = PAGE_WIDTH * DPI_SCALE;
+  canvas.height = canvasHeight * DPI_SCALE;
+  const ctx = canvas.getContext("2d");
+
+  ctx.scale(DPI_SCALE, DPI_SCALE);
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, PAGE_WIDTH, canvasHeight);
+
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(10, 10, PAGE_WIDTH - 20, canvasHeight - 20);
+
+  let y = PADDING;
+
+  const titleBoxH = 60;
+  const fullW = col7 - col1;
+  
+  ctx.lineWidth = 3;
+  ctx.strokeRect(col1, y, fullW, titleBoxH);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(col1 + 4, y + 4, fullW - 8, titleBoxH - 8);
+
+ ctx.font = FONT_HDR;
+ctx.fillStyle = "#000000";
+ctx.textAlign = "center";
+const titleStr = `RATE LIST OF ${lotNo || "N/A"}`;
+ctx.fillText(titleStr, col1 + fullW / 2, y + 40);
+  
+  if (revisionCount > 1) {
+    ctx.font = "bold 14px Arial";
+    ctx.fillStyle = "#000000";
+    const updateStr = `** REVISION #${revisionCount} **`;
+    const updateW = ctx.measureText(updateStr).width;
+    ctx.fillText(updateStr, col7 - updateW - 10, y + 40);
+  }
+  
+  y += titleBoxH + 30;
+
+  ctx.font = "bold 16px Arial";
+  ctx.fillStyle = "#000000";
+  ctx.textAlign = "left";
+  const { display } = nowISTParts();
+  
+  ctx.fillText(`CATEGORY :  ${(category || "-").toUpperCase()}`, col1, y);
+  ctx.textAlign = "right";
+  const dateStr = `DATE: ${display}`;
+  const dateW = ctx.measureText(dateStr).width;
+  ctx.fillText(dateStr, col7, y);
+  
+  y += LINE_H;
+  ctx.textAlign = "left";
+  ctx.fillText(`SUBMITTER:  ${(submitterName || "-").toUpperCase()}`, col1, y);
+  
+  y += LINE_H;
+  
+  // Show previous total if this is an update
+  if (previousTotal > 0 && revisionCount > 1) {
+    ctx.font = "14px Arial";
+    ctx.fillStyle = "#000000";
+    ctx.textAlign = "left";
+    ctx.fillText(`PREVIOUS TOTAL: ${formatINR(previousTotal)}`, col1, y);
+    const totalChange = total - previousTotal;
+    const changeText = totalChange !== 0 ? `CHANGE: ${totalChange > 0 ? '▲' : '▼'} ${formatINR(Math.abs(totalChange))}` : "CHANGE: No change";
+    ctx.textAlign = "right";
+    ctx.fillText(changeText, col7, y);
+    y += LINE_H;
+  }
+  
+  y += LINE_H / 2;
+
+  const crisp = (v) => Math.round(v) + 0.5;
+  const vline = (x, y1, y2) => {
+    ctx.beginPath();
+    ctx.moveTo(crisp(x), crisp(y1));
+    ctx.lineTo(crisp(x), crisp(y2));
+    ctx.stroke();
+  };
+
+  const COLS = [col1, col2, col3, col4, col5, col6, col7];
+
+  ctx.font = "bold 14px Arial"; 
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(col1, y, col7 - col1, LINE_H);
+  ctx.fillStyle = "#000000";
+  ctx.strokeRect(col1, y, col7 - col1, LINE_H);
+
+  for (let i = 1; i < COLS.length; i++) {
+    if (i < COLS.length - 1) vline(COLS[i], y, y + LINE_H);
+  }
+
+  ctx.textAlign = "center";
+  ctx.fillText("Attribute", col1 + (col2 - col1) / 2, y + 22);
+  ctx.fillText("Option", col2 + (col3 - col2) / 2, y + 22);
+  ctx.fillText("Rate", col3 + (col4 - col3) / 2, y + 22);
+  ctx.fillText("Qty", col4 + (col5 - col4) / 2, y + 22);
+  ctx.fillText("Amount", col5 + (col6 - col5) / 2, y + 22);
+  ctx.fillText("Change", col6 + (col7 - col6) / 2, y + 22);
+  
+  y += LINE_H;
+
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#000000";
+  
+  billRows.forEach((r, idx) => {
+    const diff = amountDifferences ? amountDifferences[idx] : null;
+    const displayAttr = showEnglish && r.attrEnglish ? r.attrEnglish : r.attr;
+    const displayOpt = showEnglish && r.optEnglish ? r.optEnglish : (r.opt || "-");
+    
+    const attrLines = wrapText(ctx, displayAttr, labelWidth);
+    const optLines = wrapText(ctx, displayOpt, optionWidth);
+    
+    const rowHeight = Math.max(attrLines.length, optLines.length, 1) * LINE_H;
+
+    ctx.strokeRect(col1, y, col7 - col1, rowHeight);
+    for (let i = 1; i < COLS.length; i++) {
+      if (i < COLS.length - 1) vline(COLS[i], y, y + rowHeight);
+    }
+
+    // Attribute column - CENTERED
+    ctx.textAlign = "center";
+    attrLines.forEach((line, j) => {
+      const yPos = y + (j + 1) * LINE_H - 8;
+      ctx.fillStyle = "#000000";
+      ctx.fillText(line, col1 + (col2 - col1) / 2, yPos);
+    });
+
+    // Option column - CENTERED
+    optLines.forEach((line, j) => {
+      const yPos = y + (j + 1) * LINE_H - 8;
+      ctx.fillStyle = "#000000";
+      ctx.fillText(line, col2 + (col3 - col2) / 2, yPos);
+    });
+
+    // Rate column (center aligned)
+    const rateStr = formatINR(r.rate);
+    ctx.fillStyle = "#000000";
+    ctx.fillText(rateStr, col3 + (col4 - col3) / 2, y + 22);
+
+    // Qty column (center aligned)
+    const qtyStr = String(r.qty);
+    ctx.fillText(qtyStr, col4 + (col5 - col4) / 2, y + 22);
+
+    // Amount column (center aligned)
+    const amtStr = formatINR(r.amount);
+    ctx.fillText(amtStr, col5 + (col6 - col5) / 2, y + 22);
+
+    // Change column with checkbox (center aligned)
+    const checkboxX = col6 + ((col7 - col6) / 2) - 8;
+    const checkboxY = y + 8;
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(checkboxX, checkboxY, 16, 16);
+    
+    // If there's a change, check the checkbox
+    // if (diff && diff.isChanged) {
+    //   ctx.beginPath();
+    //   ctx.moveTo(checkboxX + 3, checkboxY + 8);
+    //   ctx.lineTo(checkboxX + 7, checkboxY + 12);
+    //   ctx.lineTo(checkboxX + 13, checkboxY + 4);
+    //   ctx.stroke();
+    // }
+    ctx.fillStyle = "#000000";
+
+    y += rowHeight;
+  });
+
+  ctx.font = FONT_BOLD;
+  ctx.fillStyle = "#000000";
+  ctx.textAlign = "center";
+  ctx.strokeRect(col1, y, col7 - col1, LINE_H);
+  for (let i = 1; i < COLS.length; i++) {
+    if (i < COLS.length - 1) vline(COLS[i], y, y + LINE_H);
+  }
+  ctx.fillText("TOTAL AMOUNT", col1 + (col5 - col1) / 2, y + 22);
+  const totalStr = formatINR(total);
+  ctx.fillText(totalStr, col5 + (col6 - col5) / 2, y + 22);
+  
+  y += LINE_H;
+
+  y += LINE_H;
+
+  const footerSpace = 120;
+  if (y < (canvasHeight / DPI_SCALE) - footerSpace - PADDING) {
+      y = (canvasHeight / DPI_SCALE) - footerSpace - PADDING;
+  }
+
+  const BOX_GAP = 12;
+  const totalW = col7 - col1;
+  const boxW = Math.floor((totalW - BOX_GAP * 3) / 4);
+  const boxH = 80;
+
+  function drawSignatureBox(x, yTop, w, h, labelText) {
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, yTop, w, h);
+    const lineY = yTop + 50;
+    ctx.beginPath();
+    ctx.moveTo(x + 10, lineY);
+    ctx.lineTo(x + w - 10, lineY);
+    ctx.stroke();
+    const labelW = ctx.measureText(labelText).width;
+    ctx.fillStyle = "#000000";
+    ctx.textAlign = "center";
+    ctx.fillText(labelText, x + (w - labelW) / 2, lineY + 20);
+  }
+
+  drawSignatureBox(col1, y, boxW, boxH, "Pintu");
+  drawSignatureBox(col1 + (boxW + BOX_GAP), y, boxW, boxH, "Mohit Sir");
+  drawSignatureBox(col1 + (boxW + BOX_GAP) * 2, y, boxW, boxH, "Submitter");
+
+  // Any Changes box with Yes/No based on actual changes
+  const acX = col1 + (boxW + BOX_GAP) * 3;
+  ctx.strokeRect(acX, y, boxW, boxH);
+  ctx.font = "bold 12px Arial";
+  ctx.fillStyle = "#000000";
+  ctx.textAlign = "center";
+  ctx.fillText("Any Change?", acX + boxW / 2, y + 20);
+  ctx.strokeRect(acX + 8, y + 28, boxW - 16, 40);
+  
+  // Write YES if there are changes, NO if no changes
+  ctx.font = "bold 16px Arial";
+  const changeStatus = hasChanges ? "YES" : "NO";
+  ctx.fillStyle = "#000000";
+  ctx.fillText(changeStatus, acX + boxW / 2, y + 55);
+
+  const filename = revisionCount > 1 ? `RateList_${lotNo}_Rev${revisionCount}.jpg` : `RateList_${lotNo}.jpg`;
+  const jpeg = canvas.toDataURL("image/jpeg", 0.9);
+  downloadDataUrl(jpeg, filename);
+}
+
 export default function RateCalculator() {
   const [rows, setRows] = useState([]);
   const [category, setCategory] = useState("");
@@ -1248,9 +1237,10 @@ export default function RateCalculator() {
 
   const [pendingSubmitterName, setPendingSubmitterName] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isUpdate, setIsUpdate] = useState(false);
   
-  // New state for language warning modal
   const [showLanguageWarning, setShowLanguageWarning] = useState(false);
+  const [existingLotData, setExistingLotData] = useState(null);
 
   const confirmCardRef = useRef(null);
   const [confirmDialogPng, setConfirmDialogPng] = useState(null);
@@ -1296,6 +1286,7 @@ export default function RateCalculator() {
     console.log("Loading lot with data:", lot);
     
     setLotNo(lot.lotNo);
+    setExistingLotData(lot);
     
     if (DEFAULT_SUBMITTERS.includes(lot.submitter)) {
       setSubmitter(lot.submitter);
@@ -1305,13 +1296,11 @@ export default function RateCalculator() {
       setUseCustomSubmitter(true);
     }
     
-    // Set category
     if (lot.category) {
       setCategory(lot.category);
       setShowCategorySelection(false);
     }
     
-    // Handle jacket categories
     if (lot.category === "Jacket" || lot.category === "WINDCHEATER" || lot.category === "FILLING JACKET" || lot.category === "LEATHER") {
       if (lot.actualCategory && (lot.actualCategory === "WINDCHEATER" || lot.actualCategory === "FILLING JACKET" || lot.actualCategory === "LEATHER")) {
         setSelectedSubcategory(lot.actualCategory);
@@ -1325,7 +1314,6 @@ export default function RateCalculator() {
       setSelectedJacketType(jacketType);
     }
     
-    // Load selections
     if (lot.selections && lot.selections.length > 0) {
       const newForm = {};
       const newQtyByAttr = {};
@@ -1621,6 +1609,14 @@ export default function RateCalculator() {
     [billRows]
   );
 
+  // Calculate amount differences when updating existing lot
+  const amountDifferences = useMemo(() => {
+    if (existingLotData && existingLotData.selections && billRows.length > 0) {
+      return calculateAmountDifferences(billRows, existingLotData.selections);
+    }
+    return null;
+  }, [billRows, existingLotData]);
+
   const resetForm = () => {
     setForm({});
     setQty({ Cut: 1, Label: 0, Bone: 0, Gulla: 0, Teera: 0 });
@@ -1632,6 +1628,8 @@ export default function RateCalculator() {
     setLotNo("");
     setSelectedJacketType("");
     setSearchQuery("");
+    setExistingLotData(null);
+    setIsUpdate(false);
   };
 
   const handleCategorySelect = (selectedCategory) => {
@@ -1683,9 +1681,7 @@ export default function RateCalculator() {
     resetForm();
   };
 
-  // Modified confirm submit with language check
   const onConfirmSubmit = async () => {
-    // Check if user is in English mode
     if (showEnglish) {
       setShowLanguageWarning(true);
       return;
@@ -1736,38 +1732,15 @@ export default function RateCalculator() {
     }
 
     setSubmitLoading(true);
-    try {
-      const existingLotCheck = await checkLotExistsInMasterList(finalLotNo);
-      
-      if (existingLotCheck.exists) {
-        setSubmitErr(
-          `❌ Lot No. ${finalLotNo} already exists!\n\n` +
-          `Submitted by: ${existingLotCheck.submitter}\n` +
-          `Date: ${existingLotCheck.timestamp}\n` +
-          `Category: ${existingLotCheck.category}\n\n` +
-          `Please use a different lot number.`
-        );
-        setSubmitLoading(false);
-        return;
-      }
-      
-    } catch (checkError) {
-      console.error("Error checking existing lots:", checkError);
-      const proceedAnyway = window.confirm(
-        "⚠️ Unable to verify if this lot already exists.\n\n" +
-        "Do you want to proceed with the submission?"
-      );
-      if (!proceedAnyway) {
-        setSubmitLoading(false);
-        return;
-      }
-    }
-
+    
     setPendingSubmitterName(finalSubmitter);
 
     const timestampIST = nowISTParts().display;
     
     const actualCategory = category === "Jacket" ? selectedSubcategory : category;
+    
+    const isUpdating = existingLotData && existingLotData.lotNo === finalLotNo;
+    setIsUpdate(isUpdating);
     
     const payload = {
       action: "submitQuote",
@@ -1784,6 +1757,8 @@ export default function RateCalculator() {
         qtyByAttr,
         selections: billRows,
         showEnglish,
+        isUpdate: isUpdating,
+        previousSelections: isUpdating ? existingLotData.selections : null
       },
     };
 
@@ -1801,7 +1776,11 @@ export default function RateCalculator() {
         submitterName: finalSubmitter,
         lotNo: finalLotNo,
         checkedRows: billRows.map(() => true),
-        showEnglish: false, // Force Hindi for the receipt
+        showEnglish: false,
+        previousRates: isUpdating ? existingLotData.selections : null,
+        revisionCount: isUpdating ? (existingLotData.revisionCount || 1) + 1 : 1,
+        amountDifferences: amountDifferences,
+        previousTotal: isUpdating ? existingLotData.total : 0
       });
 
       const res = await savePromise;
@@ -1871,6 +1850,9 @@ export default function RateCalculator() {
       URL.revokeObjectURL(url);
     }
   }
+
+  // Calculate total change amount for display
+  const totalChange = amountDifferences ? amountDifferences.reduce((sum, d) => sum + d.amountChange, 0) : 0;
 
   return (
     <div className="rc2-container">
@@ -2081,6 +2063,11 @@ export default function RateCalculator() {
                   {category}
                   {selectedSubcategory && ` • ${selectedSubcategory}`}
                   {selectedJacketType && ` • ${selectedJacketType}`}
+                  {existingLotData && existingLotData.isUpdated && (
+                    <span className="rc2-update-badge">
+                      Updating Lot #{existingLotData.lotNo} (Previous: {formatINR(existingLotData.total)})
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2089,6 +2076,16 @@ export default function RateCalculator() {
                 onChange={setSearchQuery}
                 placeholder="Search attributes or options..."
               />
+
+              {existingLotData && existingLotData.isUpdated && (
+                <div className="rc2-info-alert">
+                  <span className="rc2-info-icon">ℹ️</span>
+                  <div>
+                    <strong>Updating existing lot</strong>
+                    <p>Previous total: {formatINR(existingLotData.total)} | Current total: {formatINR(total)} | Change: {totalChange > 0 ? '▲' : totalChange < 0 ? '▼' : ''} {formatINR(Math.abs(totalChange))}</p>
+                  </div>
+                </div>
+              )}
 
               {loading ? (
                 <div className="rc2-attributes-grid">
@@ -2268,6 +2265,11 @@ export default function RateCalculator() {
                     <span className="rc2-total-number">{formatINR(total)}</span>
                     <span className="rc2-total-emoji">💰</span>
                   </div>
+                  {existingLotData && totalChange !== 0 && (
+                    <div className={`rc2-total-change ${totalChange > 0 ? 'rc2-change-positive' : 'rc2-change-negative'}`}>
+                      {totalChange > 0 ? '▲' : '▼'} {formatINR(Math.abs(totalChange))} from previous ({formatINR(existingLotData.total)})
+                    </div>
+                  )}
                 </div>
 
                 <div className="rc2-selections-section">
@@ -2282,10 +2284,13 @@ export default function RateCalculator() {
                         const key = toCanonicalAttr(r.attr);
                         const sheetQty = quantityAttrSet.has(r.attr);
                         const showQty = sheetQty || isQtyKey(key);
+                        const diff = amountDifferences ? amountDifferences[i] : null;
+                        const hasChange = diff && diff.isChanged;
+                        
                         return (
-                          <div className="rc2-selection-item" key={`${r.attr}-${r.opt}-${i}`}>
+                          <div className={`rc2-selection-item ${hasChange ? 'rc2-selection-changed' : ''}`} key={`${r.attr}-${r.opt}-${i}`}>
                             <div className="rc2-selection-details">
-                              <span className="rc2-selection-emoji">✅</span>
+                              <span className="rc2-selection-emoji">{hasChange ? (diff.amountChange > 0 ? '📈' : '📉') : '✅'}</span>
                               <div className="rc2-selection-text">
                                 <span className="rc2-selection-attr">
                                   {getDisplayText(r.attr, r.attrEnglish)}
@@ -2299,6 +2304,11 @@ export default function RateCalculator() {
                               {showQty && <span className="rc2-selection-qty">×{r.qty}</span>}
                               <span className="rc2-selection-rate">{formatINR(r.rate)}</span>
                               <span className="rc2-selection-amount">{formatINR(r.amount)}</span>
+                              {hasChange && (
+                                <span className={`rc2-selection-change ${diff.amountChange > 0 ? 'rc2-change-positive' : 'rc2-change-negative'}`}>
+                                  {diff.amountChange > 0 ? '▲' : '▼'} {formatINR(Math.abs(diff.amountChange))}
+                                </span>
+                              )}
                             </div>
                           </div>
                         );
@@ -2366,11 +2376,19 @@ export default function RateCalculator() {
                 </h3>
                 <p className="rc2-modal-subtitle">
                   Category: <strong>{category || "—"}{selectedSubcategory ? ` - ${selectedSubcategory}` : ''}{selectedJacketType ? ` - ${selectedJacketType}` : ''}</strong>
+                  {existingLotData && (
+                    <span className="rc2-previous-total"> (Previous Total: {formatINR(existingLotData.total)})</span>
+                  )}
                 </p>
               </div>
               <div className="rc2-bill-total">
                 <span>Total</span>
                 <strong>{formatINR(total)}</strong>
+                {existingLotData && totalChange !== 0 && (
+                  <span className={`rc2-bill-change ${totalChange > 0 ? 'rc2-change-positive' : 'rc2-change-negative'}`}>
+                    {totalChange > 0 ? '▲' : '▼'} {formatINR(Math.abs(totalChange))}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -2382,20 +2400,32 @@ export default function RateCalculator() {
                   <div className="rc2-text-right">Rate</div>
                   <div className="rc2-text-right">Qty</div>
                   <div className="rc2-text-right">Amount</div>
+                  <div className="rc2-text-right">Change</div>
                 </div>
                 {billRows.length ? (
-                  billRows.map((r, i) => (
-                    <div className="rc2-bill-row" key={i}>
-                      <div className="rc2-bill-attr">
-                        <span className="rc2-bill-icon">🔧</span>
-                        {getDisplayText(r.attr, r.attrEnglish)}
+                  billRows.map((r, i) => {
+                    const diff = amountDifferences ? amountDifferences[i] : null;
+                    const hasChange = diff && diff.isChanged;
+                    return (
+                      <div className={`rc2-bill-row ${hasChange ? 'rc2-bill-row-changed' : ''}`} key={i}>
+                        <div className="rc2-bill-attr">
+                          <span className="rc2-bill-icon">🔧</span>
+                          {getDisplayText(r.attr, r.attrEnglish)}
+                        </div>
+                        <div className="rc2-bill-opt">{getDisplayText(r.opt, r.optEnglish)}</div>
+                        <div className="rc2-text-right">{formatINR(r.rate)}</div>
+                        <div className="rc2-text-right">{r.qty}</div>
+                        <div className="rc2-text-right rc2-bill-amount">{formatINR(r.amount)}</div>
+                        <div className="rc2-text-right">
+                          {hasChange && (
+                            <span className={diff.amountChange > 0 ? 'rc2-change-positive' : 'rc2-change-negative'}>
+                              {diff.amountChange > 0 ? '▲' : '▼'} {formatINR(Math.abs(diff.amountChange))}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="rc2-bill-opt">{getDisplayText(r.opt, r.optEnglish)}</div>
-                      <div className="rc2-text-right">{formatINR(r.rate)}</div>
-                      <div className="rc2-text-right">{r.qty}</div>
-                      <div className="rc2-text-right rc2-bill-amount">{formatINR(r.amount)}</div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="rc2-bill-empty">
                     <span className="rc2-empty-icon">📝</span>
@@ -2423,7 +2453,6 @@ export default function RateCalculator() {
         </div>
       )}
 
-      {/* Language Warning Modal */}
       {showLanguageWarning && (
         <div className="rc2-modal" role="dialog" aria-modal="true" aria-label="Language requirement">
           <div className="rc2-modal-backdrop" onClick={() => setShowLanguageWarning(false)} />
@@ -2462,10 +2491,6 @@ export default function RateCalculator() {
                   className="rc2-btn rc2-btn-outline"
                   onClick={() => {
                     setShowLanguageWarning(false);
-                    // Optional: Auto-switch to Hindi? Uncomment if desired
-                    // if (showEnglish) {
-                    //   toggleLanguage();
-                    // }
                   }}
                 >
                   <span className="rc2-btn-icon">↩️</span> Go Back
@@ -2596,6 +2621,7 @@ export default function RateCalculator() {
         <SuccessOverlay
           submitterName={pendingSubmitterName}
           totalINR={pendingTotalINR}
+          isUpdate={isUpdate}
           onClose={() => setShowSuccess(false)}
         />
       )}
@@ -2603,7 +2629,7 @@ export default function RateCalculator() {
       {justSubmitted && (
         <div className="rc2-toast">
           <span className="rc2-toast-icon">🎉</span>
-          Rate slip generated and downloaded!
+          {isUpdate ? "Lot updated and rate slip downloaded!" : "Rate slip generated and downloaded!"}
         </div>
       )}
     </div>

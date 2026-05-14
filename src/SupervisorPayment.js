@@ -6,7 +6,7 @@ const GOOGLE_SHEETS_CONFIG = {
   API_KEY: "AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk",
   SPREADSHEET_ID: "17qqixpHOXvG1U3RlRwaHON5JCkugpy4RIu5N9zR9ScM",
   KARIGAR_ASSIGNMENTS_RANGE: "KarigarAssignments!A:Z",
-  KARIGAR_PROFILE_RANGE: "KarigarProfiles!A:L",
+  KARIGAR_PROFILE_RANGE: "KarigarProfiles!A:Q",
   PAYABLES_RANGE: "Payables!A:J",
   SUPPLIERS_RANGE: "Suppliers!A:F",
 };
@@ -122,116 +122,188 @@ export default function SupervisorPayment({ onBack, supervisor, onNavigate }) {
   };
 
   // Function to check if a lot is fully completed
-  const analyzeLotCompletion = (assignments) => {
-    const lotMap = new Map();
-    
-    assignments.forEach(assignment => {
-      if (!lotMap.has(assignment.lotNumber)) {
-        lotMap.set(assignment.lotNumber, {
-          lotNumber: assignment.lotNumber,
-          totalAssignments: 0,
-          completedAssignments: 0,
-          shades: new Set(),
-          completedShades: new Set(),
-          karigars: new Set(),
-          assignments: [],
-          brands: new Set(),
-          fabrics: new Set(),
-          styles: new Set(),
-          totalQuantity: 0,
-          completedQuantity: 0,
-          totalAmount: 0
-        });
-      }
-      const lotInfo = lotMap.get(assignment.lotNumber);
-      lotInfo.totalAssignments++;
-      lotInfo.shades.add(assignment.shade);
-      lotInfo.karigars.add(assignment.karigarName);
-      lotInfo.assignments.push(assignment);
-      lotInfo.brands.add(assignment.brand);
-      lotInfo.fabrics.add(assignment.fabric);
-      lotInfo.styles.add(assignment.style);
-      lotInfo.totalQuantity += assignment.quantity || 0;
-      
-      if (assignment.status === 'completed') {
-        lotInfo.completedAssignments++;
-        lotInfo.completedShades.add(assignment.shade);
-        lotInfo.completedQuantity += assignment.completedQuantity || assignment.quantity || 0;
-      }
-    });
-    
-    // Calculate completion status for each lot
-    lotMap.forEach((value, key) => {
-      value.isFullyCompleted = value.shades.size === value.completedShades.size;
-      value.completionPercentage = Math.round((value.completedShades.size / value.shades.size) * 100);
-      value.totalKarigars = value.karigars.size;
-      
-      // Get rate from the first completed assignment or first assignment
-      const firstAssignment = value.assignments.find(a => a.status === 'completed') || value.assignments[0];
-      if (firstAssignment) {
-        const rateInfo = getRateFromList(firstAssignment);
-        value.rate = rateInfo.rate;
-        value.rateInfo = rateInfo;
-        value.totalAmount = value.completedQuantity * rateInfo.rate;
-      }
-    });
-    
-    setLotCompletionMap(lotMap);
-    return lotMap;
-  };
-
-  const loadKarigarAssignments = async () => {
-    try {
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID}/values/${GOOGLE_SHEETS_CONFIG.KARIGAR_ASSIGNMENTS_RANGE}?key=${GOOGLE_SHEETS_CONFIG.API_KEY}`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to fetch karigar assignments');
-      const data = await response.json();
-
-      if (data.values && data.values.length > 0) {
-        const headers = data.values[0];
-        const rows = data.values.slice(1);
-        
-        const assignments = rows.map((row, index) => {
-          const assignment = {
-            timestamp: row[0] || '',
-            lotNumber: row[1] ? row[1].toString().trim() : '',
-            brand: row[2] ? row[2].trim() : '',
-            fabric: row[3] ? row[3].trim() : '',
-            style: row[4] ? row[4].trim() : '',
-            garmentType: row[5] ? row[5].trim() : '',
-            shade: row[6] ? row[6].trim() : '',
-            karigarName: row[7] ? row[7].trim() : '',
-            karigarId: row[8] ? row[8].toString().trim() : '',
-            quantity: parseInt(row[9]) || 0,
-            savedBy: row[10] ? row[10].trim() : '',
-            supervisor: row[11] ? row[11].trim() : '',
-            savedAt: row[12] || '',
-            status: row[13] ? row[13].trim().toLowerCase() : 'pending',
-            rate: 0,
-            completedQuantity: 0,
-            paymentStatus: 'pending',
-            notes: ''
-          };
-          
-          if (assignment.status === 'completed') {
-            assignment.completedQuantity = assignment.quantity;
-          }
-          
-          assignment.totalAmount = (assignment.completedQuantity || assignment.quantity || 0) * (assignment.rate || 0);
-          
-          return assignment;
-        }).filter(a => a.karigarName && a.karigarId);
-        
-        setKarigarAssignments(assignments);
-        
-        // Analyze lot completion
-        analyzeLotCompletion(assignments);
-      }
-    } catch (err) {
-      console.error('Error loading karigar assignments:', err);
-      setError('Failed to load karigar assignments');
+ const analyzeLotCompletion = (assignments) => {
+  const lotMap = new Map();
+  
+  assignments.forEach(assignment => {
+    if (!lotMap.has(assignment.lotNumber)) {
+      lotMap.set(assignment.lotNumber, {
+        lotNumber: assignment.lotNumber,
+        totalAssignments: 0,
+        completedAssignments: 0,
+        shades: new Set(),
+        completedShades: new Set(),
+        karigars: new Map(), // Map to store karigar info
+        assignments: [],
+        brands: new Set(),
+        fabrics: new Set(),
+        styles: new Set(),
+        totalQuantity: 0,
+        completedQuantity: 0,
+        totalAmount: 0,
+        lotStatus: assignment.lotStatus,
+        totalShadesInLot: assignment.totalShadesInLot,
+        completedShadesInLot: assignment.completedShadesInLot,
+        isLotFullyCompleted: false
+      });
     }
-  };
+    
+    const lotInfo = lotMap.get(assignment.lotNumber);
+    lotInfo.totalAssignments++;
+    lotInfo.shades.add(assignment.shade);
+    lotInfo.brands.add(assignment.brand);
+    lotInfo.fabrics.add(assignment.fabric);
+    lotInfo.styles.add(assignment.style);
+    lotInfo.karigars.set(assignment.karigarId, {
+      name: assignment.karigarName,
+      id: assignment.karigarId,
+      quantity: assignment.quantity,
+      shades: []
+    });
+    lotInfo.assignments.push(assignment);
+    lotInfo.totalQuantity += assignment.quantity || 0;
+    
+    if (assignment.status === 'completed') {
+      lotInfo.completedAssignments++;
+      lotInfo.completedShades.add(assignment.shade);
+      lotInfo.completedQuantity += assignment.completedQuantity || assignment.quantity || 0;
+    }
+  });
+  
+  // Calculate completion status for each lot
+  lotMap.forEach((value, key) => {
+    // Use isLotFullyCompleted from the assignment data
+    value.isFullyCompleted = value.completedShades.size === value.shades.size;
+    value.completionPercentage = Math.round((value.completedShades.size / value.shades.size) * 100);
+    value.totalKarigars = value.karigars.size;
+    
+    // Get rate from the first completed assignment or first assignment
+    const firstAssignment = value.assignments.find(a => a.status === 'completed') || value.assignments[0];
+    if (firstAssignment) {
+      const rateInfo = getRateFromList({
+        lotNumber: firstAssignment.lotNumber,
+        garmentType: firstAssignment.garmentType,
+        fabric: firstAssignment.fabric,
+        style: firstAssignment.style,
+        brand: firstAssignment.brand
+      });
+      value.rate = rateInfo.rate;
+      value.rateInfo = rateInfo;
+      value.totalAmount = value.completedQuantity * rateInfo.rate;
+    }
+  });
+  
+  setLotCompletionMap(lotMap);
+  return lotMap;
+};
+
+const loadKarigarAssignments = async () => {
+  try {
+    setLoading(true);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID}/values/${GOOGLE_SHEETS_CONFIG.KARIGAR_ASSIGNMENTS_RANGE}?key=${GOOGLE_SHEETS_CONFIG.API_KEY}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to fetch karigar assignments');
+    const data = await response.json();
+
+    if (data.values && data.values.length > 0) {
+      const headers = data.values[0];
+      const rows = data.values.slice(1);
+      
+      // Find column indices
+      const timestampIdx = headers.findIndex(h => h === 'Timestamp');
+      const lotNumberIdx = headers.findIndex(h => h === 'Lot Number');
+      const brandIdx = headers.findIndex(h => h === 'Brand');
+      const fabricIdx = headers.findIndex(h => h === 'Fabric');
+      const styleIdx = headers.findIndex(h => h === 'Style');
+      const garmentTypeIdx = headers.findIndex(h => h === 'Garment Type');
+      const assignmentsJsonIdx = headers.findIndex(h => h === 'Assignments JSON');
+      const supervisorIdx = headers.findIndex(h => h === 'Supervisor');
+      const statusIdx = headers.findIndex(h => h === 'Status');
+      const lastUpdatedIdx = headers.findIndex(h => h === 'Last Updated');
+      const completionDateIdx = headers.findIndex(h => h === 'Completion Date/Time');
+      
+      const allAssignments = [];
+      
+      rows.forEach((row, index) => {
+        const lotNumber = row[lotNumberIdx] ? row[lotNumberIdx].toString().trim() : '';
+        if (!lotNumber) return;
+        
+        const brand = row[brandIdx] || '';
+        const fabric = row[fabricIdx] || '';
+        const style = row[styleIdx] || '';
+        const garmentType = row[garmentTypeIdx] || '';
+        const supervisor = row[supervisorIdx] || '';
+        const lotStatus = row[statusIdx] ? row[statusIdx].toLowerCase() : 'pending';
+        const lastUpdated = row[lastUpdatedIdx] || '';
+        const completionDate = row[completionDateIdx] || '';
+        
+        // Parse Assignments JSON
+        let assignmentsJson = {};
+        try {
+          if (row[assignmentsJsonIdx]) {
+            assignmentsJson = JSON.parse(row[assignmentsJsonIdx]);
+          }
+        } catch (e) {
+          console.error(`Error parsing JSON for lot ${lotNumber}:`, e);
+        }
+        
+        // For each shade in the assignments JSON, create an assignment object
+        const shadeEntries = Object.entries(assignmentsJson);
+        const totalShades = shadeEntries.length;
+        const completedShades = shadeEntries.filter(([_, data]) => data.status === 'Completed').length;
+        const isFullyCompleted = completedShades === totalShades && totalShades > 0;
+        
+        // Create a mapping of shade to assignment for lot completion tracking
+        shadeEntries.forEach(([shade, shadeData]) => {
+          const karigarId = shadeData.karigarId || '';
+          const karigarName = shadeData.karigarName || '';
+          const quantity = shadeData.pcs || 0;
+          const shadeStatus = shadeData.status || 'pending';
+          const completedAt = shadeData.completedAt || '';
+          
+          allAssignments.push({
+            timestamp: row[timestampIdx] || '',
+            lotNumber: lotNumber,
+            brand: brand,
+            fabric: fabric,
+            style: style,
+            garmentType: garmentType,
+            shade: shade,
+            karigarName: karigarName,
+            karigarId: karigarId,
+            quantity: quantity,
+            savedBy: row[10] || '',
+            supervisor: supervisor,
+            savedAt: row[12] || '',
+            status: shadeStatus.toLowerCase(), // Individual shade status
+            lotStatus: lotStatus, // Overall lot status from sheet
+            rate: 0,
+            completedQuantity: shadeStatus === 'Completed' ? quantity : 0,
+            paymentStatus: 'pending',
+            notes: '',
+            completedAt: completedAt,
+            lastUpdated: lastUpdated,
+            completionDate: completionDate,
+            // Store lot-level info
+            totalShadesInLot: totalShades,
+            completedShadesInLot: completedShades,
+            isLotFullyCompleted: isFullyCompleted
+          });
+        });
+      });
+      
+      setKarigarAssignments(allAssignments);
+      
+      // Analyze lot completion using the new data
+      analyzeLotCompletion(allAssignments);
+    }
+  } catch (err) {
+    console.error('Error loading karigar assignments:', err);
+    setError('Failed to load karigar assignments');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Load rate list from separate workbook
   const loadRateList = async () => {
@@ -479,70 +551,73 @@ Individual completed assignments: ${groupedLotsList.reduce((sum, lot) => sum + l
   }, [groupedLots, searchQuery, sortBy, sortOrder]);
 
   // Function to get rate from rate list based on garment details
-  const getRateFromList = (assignment) => {
-    if (!rateList || rateList.length === 0) {
-      return {
-        rate: 0,
-        source: 'none',
-        matchedFrom: 'No rate list available'
-      };
-    }
-
-    // Try to match by Lot Number first (most accurate)
-    let matchedRate = rateList.find(r => 
-      r.lotNo && r.lotNo.toString().trim() === assignment.lotNumber.toString().trim()
-    );
-
-    if (matchedRate) {
-      return {
-        rate: matchedRate.rate,
-        source: 'rateList',
-        matchedFrom: `Exact lot match: ${matchedRate.lotNo}`,
-        rateDetails: matchedRate
-      };
-    }
-
-    // If no lot match, try to match by Category/Subcategory/Jacket Type combination
-    const category = (assignment.garmentType || assignment.category || '').toLowerCase().trim();
-    const subcategory = (assignment.fabric || '').toLowerCase().trim();
-    const jacketType = (assignment.style || '').toLowerCase().trim();
-
-    const possibleMatches = rateList.filter(r => {
-      const rCategory = (r.category || '').toLowerCase().trim();
-      const rDisplayCategory = (r.displayCategory || '').toLowerCase().trim();
-      const rSubcategory = (r.subcategory || '').toLowerCase().trim();
-      const rJacketType = (r.jacketType || '').toLowerCase().trim();
-
-      return (
-        (category && (rCategory === category || rDisplayCategory === category)) ||
-        (subcategory && rSubcategory === subcategory) ||
-        (jacketType && rJacketType === jacketType)
-      );
-    });
-
-    if (possibleMatches.length > 0) {
-      const sortedMatches = possibleMatches.sort((a, b) => {
-        if (a.timestamp && b.timestamp) {
-          return new Date(b.timestamp) - new Date(a.timestamp);
-        }
-        return 0;
-      });
-
-      matchedRate = sortedMatches[0];
-      return {
-        rate: matchedRate.rate,
-        source: 'rateList',
-        matchedFrom: `Matched by details: ${matchedRate.category || matchedRate.displayCategory} / ${matchedRate.subcategory} / ${matchedRate.jacketType}`,
-        rateDetails: matchedRate
-      };
-    }
-
+const getRateFromList = (assignment) => {
+  if (!rateList || rateList.length === 0) {
     return {
       rate: 0,
       source: 'none',
-      matchedFrom: `No rate found for lot ${assignment.lotNumber} or similar items`
+      matchedFrom: 'No rate list available'
     };
+  }
+
+  // Try to match by Lot Number first (most accurate)
+  let matchedRate = rateList.find(r => 
+    r.lotNo && r.lotNo.toString().trim() === assignment.lotNumber.toString().trim()
+  );
+
+  if (matchedRate) {
+    return {
+      rate: matchedRate.rate,
+      source: 'rateList',
+      matchedFrom: `Exact lot match: ${matchedRate.lotNo}`,
+      rateDetails: matchedRate
+    };
+  }
+
+  // Try to match by Garment Type, Fabric, Style combination
+  const garmentType = (assignment.garmentType || '').toLowerCase().trim();
+  const fabric = (assignment.fabric || '').toLowerCase().trim();
+  const style = (assignment.style || '').toLowerCase().trim();
+  const brand = (assignment.brand || '').toLowerCase().trim();
+
+  const possibleMatches = rateList.filter(r => {
+    const rCategory = (r.category || '').toLowerCase().trim();
+    const rDisplayCategory = (r.displayCategory || '').toLowerCase().trim();
+    const rSubcategory = (r.subcategory || '').toLowerCase().trim();
+    const rJacketType = (r.jacketType || '').toLowerCase().trim();
+
+    return (
+      (garmentType && (rCategory === garmentType || rDisplayCategory === garmentType)) ||
+      (fabric && rSubcategory === fabric) ||
+      (style && rJacketType === style) ||
+      (brand && (rCategory === brand || rDisplayCategory === brand))
+    );
+  });
+
+  if (possibleMatches.length > 0) {
+    // Sort by timestamp to get the most recent rate
+    const sortedMatches = possibleMatches.sort((a, b) => {
+      if (a.timestamp && b.timestamp) {
+        return new Date(b.timestamp) - new Date(a.timestamp);
+      }
+      return 0;
+    });
+
+    matchedRate = sortedMatches[0];
+    return {
+      rate: matchedRate.rate,
+      source: 'rateList',
+      matchedFrom: `Matched by details: ${matchedRate.category || matchedRate.displayCategory} / ${matchedRate.subcategory} / ${matchedRate.jacketType}`,
+      rateDetails: matchedRate
+    };
+  }
+
+  return {
+    rate: 0,
+    source: 'none',
+    matchedFrom: `No rate found for lot ${assignment.lotNumber} or similar items`
   };
+};
 
   const generatePayableId = () => {
     const prefix = 'PAY';
@@ -598,17 +673,17 @@ Individual completed assignments: ${groupedLotsList.reduce((sum, lot) => sum + l
       .reduce((sum, lot) => sum + lot.totalQuantity, 0);
   };
 
-const getSelectedLotsData = () => {
-  const selected = filteredLots.filter(lot => selectedLots.includes(lot.lotNumber));
-  // Return all assignments from selected lots with their rates
-  return selected.flatMap(lot => {
-    // Ensure each assignment has the rate from the lot
-    return lot.assignments.map(assignment => ({
-      ...assignment,
-      rate: lot.rate // Make sure rate is passed to each assignment
-    }));
-  });
-};
+  const getSelectedLotsData = () => {
+    const selected = filteredLots.filter(lot => selectedLots.includes(lot.lotNumber));
+    // Return all assignments from selected lots with their rates
+    return selected.flatMap(lot => {
+      // Ensure each assignment has the rate from the lot
+      return lot.assignments.map(assignment => ({
+        ...assignment,
+        rate: lot.rate // Make sure rate is passed to each assignment
+      }));
+    });
+  };
 
   const handleCreatePayment = () => {
     const selectedLotsData = getSelectedLotsData();
@@ -644,422 +719,422 @@ const getSelectedLotsData = () => {
     });
   };
 
-const generatePaymentSlipHTML = (payableData, selectedLotsData) => {
-  const currentDate = new Date().toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric'
-  });
-  
-  const payableId = payableData.payableId || generatePayableId();
-  const amountInWords = numberToWords(payableData.amount);
-  const supervisorName = selectedSupervisor || payableData.createdBy || 'Supervisor';
-  
-  // Group by lot number for lot-wise totals
-  const lotsByNumber = {};
-  selectedLotsData.forEach(assignment => {
-    if (!lotsByNumber[assignment.lotNumber]) {
-      lotsByNumber[assignment.lotNumber] = {
-        lotNumber: assignment.lotNumber,
-        brand: assignment.brand || '',
-        fabric: assignment.fabric || '',
-        style: assignment.style || '',
-        totalQuantity: 0,
-        totalAmount: 0,
-        rate: 0,
-        karigarCount: new Set()
-      };
-    }
+  const generatePaymentSlipHTML = (payableData, selectedLotsData) => {
+    const currentDate = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
     
-    const quantity = assignment.completedQuantity || assignment.quantity || 0;
-    const rate = assignment.rate || 0;
-    const amount = quantity * rate;
+    const payableId = payableData.payableId || generatePayableId();
+    const amountInWords = numberToWords(payableData.amount);
+    const supervisorName = selectedSupervisor || payableData.createdBy || 'Supervisor';
     
-    lotsByNumber[assignment.lotNumber].totalQuantity += quantity;
-    lotsByNumber[assignment.lotNumber].totalAmount += amount;
-    lotsByNumber[assignment.lotNumber].karigarCount.add(assignment.karigarName);
+    // Group by lot number for lot-wise totals
+    const lotsByNumber = {};
+    selectedLotsData.forEach(assignment => {
+      if (!lotsByNumber[assignment.lotNumber]) {
+        lotsByNumber[assignment.lotNumber] = {
+          lotNumber: assignment.lotNumber,
+          brand: assignment.brand || '',
+          fabric: assignment.fabric || '',
+          style: assignment.style || '',
+          totalQuantity: 0,
+          totalAmount: 0,
+          rate: 0,
+          karigarCount: new Set()
+        };
+      }
+      
+      const quantity = assignment.completedQuantity || assignment.quantity || 0;
+      const rate = assignment.rate || 0;
+      const amount = quantity * rate;
+      
+      lotsByNumber[assignment.lotNumber].totalQuantity += quantity;
+      lotsByNumber[assignment.lotNumber].totalAmount += amount;
+      lotsByNumber[assignment.lotNumber].karigarCount.add(assignment.karigarName);
+      
+      // Set the rate (all assignments in same lot should have same rate)
+      if (rate > 0) {
+        lotsByNumber[assignment.lotNumber].rate = rate;
+      }
+    });
     
-    // Set the rate (all assignments in same lot should have same rate)
-    if (rate > 0) {
-      lotsByNumber[assignment.lotNumber].rate = rate;
-    }
-  });
-  
-  // Calculate grand totals
-  const grandTotalQuantity = Object.values(lotsByNumber).reduce((sum, lot) => sum + lot.totalQuantity, 0);
-  const grandTotalAmount = Object.values(lotsByNumber).reduce((sum, lot) => sum + lot.totalAmount, 0);
-  
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Payment Slip - ${payableId}</title>
-      <style>
-        body {
-          font-family: 'Arial', sans-serif;
-          margin: 0;
-          padding: 15px;
-          background: #f5f5f5;
-        }
-        .payment-slip {
-          max-width: 900px;
-          margin: 0 auto;
-          background: white;
-          border: 2px solid #000;
-          padding: 20px;
-          position: relative;
-          font-size: 12px;
-          box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        .header {
-          text-align: center;
-          border-bottom: 2px solid #000;
-          padding-bottom: 12px;
-          margin-bottom: 15px;
-          position: relative;
-        }
-        .header h1 {
-          margin: 0;
-          color: #000;
-          font-size: 24px;
-          text-transform: uppercase;
-          font-weight: 800;
-          letter-spacing: 1px;
-        }
-        .slip-title {
-          text-align: center;
-          margin: 15px 0;
-        }
-        .slip-title h3 {
-          display: inline-block;
-          border: 2px solid #000;
-          padding: 6px 30px;
-          margin: 0;
-          font-size: 16px;
-          text-transform: uppercase;
-          background: #f0f0f0;
-          color: #000;
-          font-weight: 700;
-          letter-spacing: 1px;
-        }
-        .voucher-section {
-          position: absolute;
-          top: 15px;
-          right: 15px;
-          text-align: right;
-        }
-        .voucher-label {
-          font-size: 10px;
-          color: #666;
-          text-transform: uppercase;
-        }
-        .voucher-number {
-          font-size: 14px;
-          font-weight: 700;
-          color: #000;
-          font-family: monospace;
-          letter-spacing: 1px;
-        }
-        .info-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 10px;
-          margin: 15px 0;
-          padding: 12px;
-          border: 1px solid #000;
-          background: #fafafa;
-        }
-        .info-item {
-          display: flex;
-          align-items: baseline;
-        }
-        .info-label {
-          width: 90px;
-          font-weight: 600;
-          color: #000;
-          font-size: 11px;
-          text-transform: uppercase;
-        }
-        .info-value {
-          flex: 1;
-          color: #000;
-          font-weight: 500;
-          font-size: 12px;
-        }
-        .items-table {
-          width: 100%;
-          border-collapse: collapse;
-          margin: 15px 0;
-          font-size: 12px;
-          border: 1px solid #000;
-        }
-        .items-table th {
-          background: #000;
-          color: white;
-          padding: 10px 8px;
-          font-size: 12px;
-          font-weight: 600;
-          text-transform: uppercase;
-          border-right: 1px solid #333;
-        }
-        .items-table th:last-child {
-          border-right: none;
-        }
-        .items-table td {
-          padding: 10px 8px;
-          border: 1px solid #000;
-          color: #000;
-        }
-        .lot-row {
-          background: #f0f9ff;
-          font-weight: 600;
-        }
-        .lot-row td {
-          background: #f0f9ff;
-        }
-        .amount-in-words {
-          margin: 15px 0;
-          padding: 12px;
-          background: #f0f0f0;
-          border-left: 4px solid #000;
-          font-style: italic;
-          font-size: 12px;
-          color: #000;
-          font-weight: 500;
-        }
-        .total-section {
-          text-align: right;
-          font-size: 16px;
-          font-weight: 800;
-          margin: 15px 0;
-          padding: 12px 15px;
-          background: #e8f4f8;
-          border: 2px solid #000;
-          color: #000;
-        }
-        .total-section .total-label {
-          margin-right: 15px;
-          text-transform: uppercase;
-        }
-        .total-section .total-amount {
-          font-size: 18px;
-        }
-        .footer {
-          margin-top: 30px;
-          display: flex;
-          justify-content: space-between;
-          position: relative;
-        }
-        .signature {
-          text-align: center;
-          width: 200px;
-        }
-        .signature-line {
-          border-top: 2px solid #000;
-          margin-top: 35px;
-          padding-top: 6px;
-          font-size: 11px;
-          color: #000;
-          font-weight: 500;
-        }
-        .supervisor-signature {
-          text-align: center;
-          width: 200px;
-          margin-top: 20px;
-        }
-        .supervisor-name {
-          font-weight: 700;
-          color: #000;
-          font-size: 12px;
-          text-transform: uppercase;
-          margin-bottom: 5px;
-        }
-        .supervisor-line {
-          border-top: 2px solid #000;
-          margin-top: 25px;
-          padding-top: 6px;
-          font-size: 11px;
-          color: #000;
-          font-weight: 500;
-        }
-        .watermark {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%) rotate(-45deg);
-          font-size: 60px;
-          color: rgba(0, 0, 0, 0.03);
-          white-space: nowrap;
-          pointer-events: none;
-          z-index: 0;
-          font-weight: 800;
-          text-transform: uppercase;
-        }
-        .footer-note {
-          margin-top: 10px;
-          font-size: 9px;
-          text-align: center;
-          color: #666;
-          border-top: 1px dashed #000;
-          padding-top: 8px;
-        }
-        .payment-type-badge {
-          display: inline-block;
-          padding: 3px 10px;
-          background: #000;
-          color: white;
-          font-size: 10px;
-          font-weight: 600;
-          border-radius: 15px;
-          margin-left: 10px;
-        }
-        .text-right {
-          text-align: right;
-        }
-        .text-center {
-          text-align: center;
-        }
-        .font-bold {
-          font-weight: 700;
-        }
-        .karigar-count {
-          font-size: 11px;
-          color: #4b5563;
-          font-weight: normal;
-        }
-        @media print {
-          body { background: white; }
-          .payment-slip { 
-            border: 2px solid #000;
-            box-shadow: none;
+    // Calculate grand totals
+    const grandTotalQuantity = Object.values(lotsByNumber).reduce((sum, lot) => sum + lot.totalQuantity, 0);
+    const grandTotalAmount = Object.values(lotsByNumber).reduce((sum, lot) => sum + lot.totalAmount, 0);
+    
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Payment Slip - ${payableId}</title>
+        <style>
+          body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 15px;
+            background: #f5f5f5;
           }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="payment-slip">
-        <div class="watermark">${payableData.status.toUpperCase()}</div>
-        
-        <div class="voucher-section">
-          <div class="voucher-label">VOUCHER NUMBER</div>
-          <div class="voucher-number">${payableId}</div>
-        </div>
-        
-        <div class="header">
-          <h1>SUPERVISOR PAYMENT VOUCHER</h1>
-          <div class="payment-type-badge" style="margin-top: 5px;">THEKEDAR PAYMENT</div>
-        </div>
+          .payment-slip {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border: 2px solid #000;
+            padding: 20px;
+            position: relative;
+            font-size: 12px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+          }
+          .header {
+            text-align: center;
+            border-bottom: 2px solid #000;
+            padding-bottom: 12px;
+            margin-bottom: 15px;
+            position: relative;
+          }
+          .header h1 {
+            margin: 0;
+            color: #000;
+            font-size: 24px;
+            text-transform: uppercase;
+            font-weight: 800;
+            letter-spacing: 1px;
+          }
+          .slip-title {
+            text-align: center;
+            margin: 15px 0;
+          }
+          .slip-title h3 {
+            display: inline-block;
+            border: 2px solid #000;
+            padding: 6px 30px;
+            margin: 0;
+            font-size: 16px;
+            text-transform: uppercase;
+            background: #f0f0f0;
+            color: #000;
+            font-weight: 700;
+            letter-spacing: 1px;
+          }
+          .voucher-section {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            text-align: right;
+          }
+          .voucher-label {
+            font-size: 10px;
+            color: #666;
+            text-transform: uppercase;
+          }
+          .voucher-number {
+            font-size: 14px;
+            font-weight: 700;
+            color: #000;
+            font-family: monospace;
+            letter-spacing: 1px;
+          }
+          .info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+            padding: 12px;
+            border: 1px solid #000;
+            background: #fafafa;
+          }
+          .info-item {
+            display: flex;
+            align-items: baseline;
+          }
+          .info-label {
+            width: 90px;
+            font-weight: 600;
+            color: #000;
+            font-size: 11px;
+            text-transform: uppercase;
+          }
+          .info-value {
+            flex: 1;
+            color: #000;
+            font-weight: 500;
+            font-size: 12px;
+          }
+          .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 12px;
+            border: 1px solid #000;
+          }
+          .items-table th {
+            background: #000;
+            color: white;
+            padding: 10px 8px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            border-right: 1px solid #333;
+          }
+          .items-table th:last-child {
+            border-right: none;
+          }
+          .items-table td {
+            padding: 10px 8px;
+            border: 1px solid #000;
+            color: #000;
+          }
+          .lot-row {
+            background: #f0f9ff;
+            font-weight: 600;
+          }
+          .lot-row td {
+            background: #f0f9ff;
+          }
+          .amount-in-words {
+            margin: 15px 0;
+            padding: 12px;
+            background: #f0f0f0;
+            border-left: 4px solid #000;
+            font-style: italic;
+            font-size: 12px;
+            color: #000;
+            font-weight: 500;
+          }
+          .total-section {
+            text-align: right;
+            font-size: 16px;
+            font-weight: 800;
+            margin: 15px 0;
+            padding: 12px 15px;
+            background: #e8f4f8;
+            border: 2px solid #000;
+            color: #000;
+          }
+          .total-section .total-label {
+            margin-right: 15px;
+            text-transform: uppercase;
+          }
+          .total-section .total-amount {
+            font-size: 18px;
+          }
+          .footer {
+            margin-top: 30px;
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+          }
+          .signature {
+            text-align: center;
+            width: 200px;
+          }
+          .signature-line {
+            border-top: 2px solid #000;
+            margin-top: 35px;
+            padding-top: 6px;
+            font-size: 11px;
+            color: #000;
+            font-weight: 500;
+          }
+          .supervisor-signature {
+            text-align: center;
+            width: 200px;
+            margin-top: 20px;
+          }
+          .supervisor-name {
+            font-weight: 700;
+            color: #000;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+          }
+          .supervisor-line {
+            border-top: 2px solid #000;
+            margin-top: 25px;
+            padding-top: 6px;
+            font-size: 11px;
+            color: #000;
+            font-weight: 500;
+          }
+          .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 60px;
+            color: rgba(0, 0, 0, 0.03);
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 0;
+            font-weight: 800;
+            text-transform: uppercase;
+          }
+          .footer-note {
+            margin-top: 10px;
+            font-size: 9px;
+            text-align: center;
+            color: #666;
+            border-top: 1px dashed #000;
+            padding-top: 8px;
+          }
+          .payment-type-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            background: #000;
+            color: white;
+            font-size: 10px;
+            font-weight: 600;
+            border-radius: 15px;
+            margin-left: 10px;
+          }
+          .text-right {
+            text-align: right;
+          }
+          .text-center {
+            text-align: center;
+          }
+          .font-bold {
+            font-weight: 700;
+          }
+          .karigar-count {
+            font-size: 11px;
+            color: #4b5563;
+            font-weight: normal;
+          }
+          @media print {
+            body { background: white; }
+            .payment-slip { 
+              border: 2px solid #000;
+              box-shadow: none;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="payment-slip">
+          <div class="watermark">${payableData.status.toUpperCase()}</div>
+          
+          <div class="voucher-section">
+            <div class="voucher-label">VOUCHER NUMBER</div>
+            <div class="voucher-number">${payableId}</div>
+          </div>
+          
+          <div class="header">
+            <h1>SUPERVISOR PAYMENT VOUCHER</h1>
+            <div class="payment-type-badge" style="margin-top: 5px;">THEKEDAR PAYMENT</div>
+          </div>
 
-        <div class="slip-title">
-          <h3>KARIGAR WAGES PAYMENT SLIP</h3>
-        </div>
+          <div class="slip-title">
+            <h3>KARIGAR WAGES PAYMENT SLIP</h3>
+          </div>
 
-        <div class="info-grid">
-          <div class="info-item">
-            <span class="info-label">Date:</span>
-            <span class="info-value">${currentDate}</span>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="info-label">Date:</span>
+              <span class="info-value">${currentDate}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Due Date:</span>
+              <span class="info-value">${new Date(payableData.dueDate).toLocaleDateString('en-IN')}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Payee:</span>
+              <span class="info-value">${payableData.payeeName}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Payee Type:</span>
+              <span class="info-value">Thekedar/Supervisor</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Category:</span>
+              <span class="info-value">${payableData.category}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Status:</span>
+              <span class="info-value" style="font-weight: 700; text-transform: uppercase;">${payableData.status}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Ref No:</span>
+              <span class="info-value">${payableData.reference || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Supervisor:</span>
+              <span class="info-value" style="font-weight: 700;">${supervisorName}</span>
+            </div>
           </div>
-          <div class="info-item">
-            <span class="info-label">Due Date:</span>
-            <span class="info-value">${new Date(payableData.dueDate).toLocaleDateString('en-IN')}</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Payee:</span>
-            <span class="info-value">${payableData.payeeName}</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Payee Type:</span>
-            <span class="info-value">Thekedar/Supervisor</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Category:</span>
-            <span class="info-value">${payableData.category}</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Status:</span>
-            <span class="info-value" style="font-weight: 700; text-transform: uppercase;">${payableData.status}</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Ref No:</span>
-            <span class="info-value">${payableData.reference || 'N/A'}</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Supervisor:</span>
-            <span class="info-value" style="font-weight: 700;">${supervisorName}</span>
-          </div>
-        </div>
 
-        ${Object.keys(lotsByNumber).length > 0 ? `
-          <table class="items-table">
-            <thead>
-              <tr>
-                <th>Lot No</th>
-                <th>Brand</th>
-                <th>Fabric</th>
-                <th>Style</th>
-                <th>Karigars</th>
-                <th>Qty</th>
-                <th>Rate (₹)</th>
-                <th>Amount (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${Object.values(lotsByNumber).map(lot => {
-                const rate = lot.rate || 0;
-                const amount = lot.totalAmount || (lot.totalQuantity * rate);
+          ${Object.keys(lotsByNumber).length > 0 ? `
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th>Lot No</th>
+                  <th>Brand</th>
+                  <th>Fabric</th>
+                  <th>Style</th>
+                  <th>Karigars</th>
+                  <th>Qty</th>
+                  <th>Rate (₹)</th>
+                  <th>Amount (₹)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${Object.values(lotsByNumber).map(lot => {
+                  const rate = lot.rate || 0;
+                  const amount = lot.totalAmount || (lot.totalQuantity * rate);
+                  
+                  return `
+                    <tr class="lot-row">
+                      <td class="font-bold">${lot.lotNumber}</td>
+                      <td>${lot.brand || '—'}</td>
+                      <td>${lot.fabric || '—'}</td>
+                      <td>${lot.style || '—'}</td>
+                      <td>${lot.karigarCount.size} karigar(s)</td>
+                      <td class="text-right">${lot.totalQuantity}</td>
+                      <td class="text-right">₹${rate.toFixed(2)}</td>
+                      <td class="text-right">₹${amount.toLocaleString('en-IN')}</td>
+                    </tr>
+                  `;
+                }).join('')}
                 
-                return `
-                  <tr class="lot-row">
-                    <td class="font-bold">${lot.lotNumber}</td>
-                    <td>${lot.brand || '—'}</td>
-                    <td>${lot.fabric || '—'}</td>
-                    <td>${lot.style || '—'}</td>
-                    <td>${lot.karigarCount.size} karigar(s)</td>
-                    <td class="text-right">${lot.totalQuantity}</td>
-                    <td class="text-right">₹${rate.toFixed(2)}</td>
-                    <td class="text-right">₹${amount.toLocaleString('en-IN')}</td>
-                  </tr>
-                `;
-              }).join('')}
-              
-              <!-- Grand Total Row -->
-              <tr style="background: #000; color: white; font-weight: 700;">
-                <td colspan="5" style="text-align: right; border-right: 1px solid #333;">GRAND TOTAL:</td>
-                <td style="text-align: right; border-right: 1px solid #333;">${grandTotalQuantity}</td>
-                <td style="text-align: right; border-right: 1px solid #333;">—</td>
-                <td style="text-align: right;">₹${grandTotalAmount.toLocaleString('en-IN')}</td>
-              </tr>
-            </tbody>
-          </table>
-        ` : ''}
+                <!-- Grand Total Row -->
+                <tr style="background: #000; color: white; font-weight: 700;">
+                  <td colspan="5" style="text-align: right; border-right: 1px solid #333;">GRAND TOTAL:</td>
+                  <td style="text-align: right; border-right: 1px solid #333;">${grandTotalQuantity}</td>
+                  <td style="text-align: right; border-right: 1px solid #333;">—</td>
+                  <td style="text-align: right;">₹${grandTotalAmount.toLocaleString('en-IN')}</td>
+                </tr>
+              </tbody>
+            </table>
+          ` : ''}
 
-        <div class="amount-in-words">
-          <strong>Amount in words:</strong> ${amountInWords} Rupees Only
-        </div>
-
-        <div class="total-section">
-          <span class="total-label">Total Payable Amount:</span>
-          <span class="total-amount">₹ ${grandTotalAmount.toFixed(2)}</span>
-        </div>
-
-        <div class="footer">
-          <div class="signature">
-            <div class="signature-line">Receiver's Signature</div>
+          <div class="amount-in-words">
+            <strong>Amount in words:</strong> ${amountInWords} Rupees Only
           </div>
-          <div class="supervisor-signature">
-            <div class="supervisor-name">${supervisorName}</div>
-            <div class="supervisor-line">Supervisor/Thekedar</div>
+
+          <div class="total-section">
+            <span class="total-label">Total Payable Amount:</span>
+            <span class="total-amount">₹ ${grandTotalAmount.toFixed(2)}</span>
+          </div>
+
+          <div class="footer">
+            <div class="signature">
+              <div class="signature-line">Receiver's Signature</div>
+            </div>
+            <div class="supervisor-signature">
+              <div class="supervisor-name">${supervisorName}</div>
+              <div class="supervisor-line">Supervisor/Thekedar</div>
+            </div>
+          </div>
+
+          <div class="footer-note">
+            This is a computer generated payment voucher • Valid only with authorized signature
           </div>
         </div>
-
-        <div class="footer-note">
-          This is a computer generated payment voucher • Valid only with authorized signature
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-};
+      </body>
+      </html>
+    `;
+  };
 
   // Helper function to convert number to words
   const numberToWords = (num) => {
@@ -1101,19 +1176,19 @@ const generatePaymentSlipHTML = (payableData, selectedLotsData) => {
     window.URL.revokeObjectURL(url);
   };
 
-// Function to download payment slip as PDF (requires browser print)
-const downloadPaymentSlipAsPDF = (payableData, selectedLotsData) => {
-  const slipHTML = generatePaymentSlipHTML(payableData, selectedLotsData);
-  const printWindow = window.open('', '_blank');
-  printWindow.document.write(slipHTML);
-  printWindow.document.close();
-  printWindow.focus();
-  
-  // Add a small delay to ensure styles are loaded
-  setTimeout(() => {
-    printWindow.print();
-  }, 250);
-};
+  // Function to download payment slip as PDF (requires browser print)
+  const downloadPaymentSlipAsPDF = (payableData, selectedLotsData) => {
+    const slipHTML = generatePaymentSlipHTML(payableData, selectedLotsData);
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(slipHTML);
+    printWindow.document.close();
+    printWindow.focus();
+    
+    // Add a small delay to ensure styles are loaded
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
 
   const submitPayable = async (e) => {
     e.preventDefault();
@@ -1855,7 +1930,7 @@ const downloadPaymentSlipAsPDF = (payableData, selectedLotsData) => {
             </div>
           </div>
         ) : (
-          /* View Tab - Keep existing view tab layout */
+          /* View Tab - Payment History */
           <div style={styles.viewContent}>
             {/* Search Bar */}
             <div style={styles.searchBar}>
@@ -2121,7 +2196,6 @@ const downloadPaymentSlipAsPDF = (payableData, selectedLotsData) => {
     </div>
   );
 }
-
 const styles = {
   container: {
     minHeight: '100vh',

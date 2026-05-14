@@ -1,4 +1,4 @@
-// src/App.js - Updated version with SupervisorPayment and PallaJobOrder
+// src/App.js - Complete updated version
 
 import React, {
   useMemo,
@@ -14,8 +14,6 @@ import Welcome from "./Welcome";
 const DailyReport = lazy(() =>
   import(/* webpackChunkName: "page-daily-report" */ "./DailyReport")
 );
-/** NEW: Extrapcs Component - Note: filename is Extrapcs.js (lowercase p) */
-/** NEW: Extrapcs Component */
 const Extrapcs = lazy(() =>
   import(/* webpackChunkName: "page-extrapcs" */ "./Extrapcs")
 );
@@ -53,21 +51,24 @@ const CreateKarigarProfile = lazy(() =>
 const EnterKarigarDetails = lazy(() =>
   import(/* webpackChunkName: "page-enter-karigar-details" */ "./EnterKarigarDetails")
 );
-/** Update Lot Completion */
 const UpdateCompletionLot = lazy(() =>
   import(/* webpackChunkName: "page-update-completion-lot" */ "./UpdateCompletionLot")
 );
-/** Create Payable Component */
 const CreatePayable = lazy(() =>
   import(/* webpackChunkName: "page-create-payable" */ "./CreatePayable")
 );
-/** Supervisor Payment Component */
-const SupervisorPayment = lazy(() =>
-  import(/* webpackChunkName: "page-supervisor-payment" */ "./SupervisorPayment")
-);
-/** NEW: Palla Job Order Component */
 const PallaJobOrder = lazy(() =>
   import(/* webpackChunkName: "page-palla-job-order" */ "./PallaJobOrder")
+);
+
+// ThekedarPayment component - mapped to /#/supervisorPayment
+const ThekedarPayment = lazy(() =>
+  import(/* webpackChunkName: "page-thekedar-payment" */ "./ThekedarPayment")
+);
+
+// KarigarLotDetail component - NEW
+const KarigarLotDetail = lazy(() =>
+  import(/* webpackChunkName: "page-karigar-lot-detail" */ "./KarigarLotDetail")
 );
 
 /** ---------- Tiny hash router (no deps) ---------- */
@@ -257,9 +258,10 @@ function prefetchAll() {
   import("./EnterKarigarDetails");
   import("./UpdateCompletionLot");
   import("./CreatePayable");
-  import("./SupervisorPayment");
-  import("./Extrapcs"); // Add this line
-    import("./PallaJobOrder");
+  import("./ThekedarPayment");
+  import("./Extrapcs");
+  import("./PallaJobOrder");
+  import("./KarigarLotDetail"); // NEW - Prefetch KarigarLotDetail
 }
 
 export default function App() {
@@ -296,10 +298,10 @@ export default function App() {
         EnterKarigarDetails: "Enter Karigar Details — Garment Manager",
         UpdateLotCompletion: "Update Lot Completion — Garment Manager",
         CreatePayable: "Create Payable — Garment Manager",
-        SupervisorPayment: "Supervisor Payment — Garment Manager",
-        Extrapcs: "Extrapcs — Garment Manager", // Add this line
-        
+        supervisorPayment: "Thekedar Payment — Garment Manager",
+        Extrapcs: "Extrapcs — Garment Manager",
         PallaJobOrder: "Palla Job Order — Garment Manager",
+        KarigarLotDetail: "Karigar Lot Detail — Garment Manager", // NEW
       }[view.component] || "Garment Manager";
     localStorage.setItem("app.view", JSON.stringify(view));
   }, [view]);
@@ -370,8 +372,7 @@ export default function App() {
         </PageErrorBoundary>
       ),
       
-      // Extrapcs component - only once, with correct spelling
-    Extrapcs: () => (
+      Extrapcs: () => (
         <PageErrorBoundary>
           <Suspense fallback={<CenterLoader label="Loading Extrapcs..." />}>
             <Extrapcs
@@ -511,10 +512,11 @@ export default function App() {
         </PageErrorBoundary>
       ),
       
-      SupervisorPayment: () => (
+      // IMPORTANT: This maps the URL path /#/supervisorPayment to your ThekedarPayment component
+      supervisorPayment: () => (
         <PageErrorBoundary>
-          <Suspense fallback={<CenterLoader label="Loading Supervisor Payment..." />}>
-            <SupervisorPayment
+          <Suspense fallback={<CenterLoader label="Loading Thekedar Payment..." />}>
+            <ThekedarPayment
               user={view.user}
               onNavigate={handleNavigate}
               params={view.params}
@@ -529,6 +531,19 @@ export default function App() {
             <PallaJobOrder
               user={view.user}
               onNavigate={handleNavigate}
+              params={view.params}
+            />
+          </Suspense>
+        </PageErrorBoundary>
+      ),
+      
+      // NEW - Karigar Lot Detail Component
+      KarigarLotDetail: () => (
+        <PageErrorBoundary>
+          <Suspense fallback={<CenterLoader label="Loading Karigar Lot Details..." />}>
+            <KarigarLotDetail
+              supervisor={view.user}
+              onBack={() => handleNavigate('Welcome', view.user)}
               params={view.params}
             />
           </Suspense>

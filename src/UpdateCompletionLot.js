@@ -2,49 +2,148 @@ import React, { useState, useEffect } from 'react';
 import './UpdateCompletionLot.css';
 
 const UpdateCompletionLot = () => {
-  const [sheetData, setSheetData] = useState([]);
+  const [lotsData, setLotsData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedRows, setSelectedRows] = useState(new Set());
+  const [selectedShades, setSelectedShades] = useState(new Map());
   const [updateStatus, setUpdateStatus] = useState('');
   const [filterText, setFilterText] = useState('');
-  const [filterColumn, setFilterColumn] = useState('all');
   const [supervisors, setSupervisors] = useState([]);
   const [selectedSupervisor, setSelectedSupervisor] = useState('');
   const [loadingSupervisors, setLoadingSupervisors] = useState(false);
   const [showAllSupervisors, setShowAllSupervisors] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [expandedLots, setExpandedLots] = useState(new Set());
+  const [sortBy, setSortBy] = useState('lotNumber');
+  const [sortOrder, setSortOrder] = useState('asc');
+  const [isExporting, setIsExporting] = useState(false);
 
   // Google Sheets API configuration
   const API_KEY = 'AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk';
   const SPREADSHEET_ID = '17qqixpHOXvG1U3RlRwaHON5JCkugpy4RIu5N9zR9ScM';
   const KARIGAR_SPREADSHEET_ID = '17qqixpHOXvG1U3RlRwaHON5JCkugpy4RIu5N9zR9ScM';
   const KARIGAR_SHEET_NAME = 'KarigarProfiles';
-  const RANGE = 'KarigarAssignments!A:N';
+  const RANGE = 'KarigarAssignments!A:Q';
   
-  // Replace with your new AppScript URL after deployment
-  const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbygeFp8lxPQPsmnb5skkmxGpJbaEi1iU2Go6B2DJmts_GW5WygyENZhYP_37thFyLJP/exec';
-
-  const columns = [
-    'Timestamp',
-    'Lot Number',
-    'Brand',
-    'Fabric',
-    'Style',
-    'Garment Type',
-    'Shade',
-    'Karigar Name',
-    'Karigar ID',
-    'Saved By',
-    'Supervisor',
-    'Saved At',
-    'Status'
-  ];
+  const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzreKvgqQ_o_Dr7TjGjqatwX8L76xliQKJJKfJx3c_dv404ZLKQ_wsYJmt6062dl8aj/exec';
 
   useEffect(() => {
     fetchSheetData();
     fetchSupervisors();
   }, []);
+
+  // Parse assignments JSON supporting multiple karigars per shade
+  const parseAssignmentsJSON = (jsonString) => {
+    if (!jsonString || jsonString === '') return {};
+    try {
+      if (typeof jsonString === 'string') {
+        return JSON.parse(jsonString);
+      }
+      return jsonString;
+    } catch (e) {
+      console.error('Error parsing assignments JSON:', e, jsonString);
+      return {};
+    }
+  };
+
+  // Transform to nested structure with multiple karigars support
+  const transformToNestedStructure = (flatData) => {
+    const lotsMap = new Map();
+
+    flatData.forEach(row => {
+      const lotNumber = row['Lot Number'];
+      if (!lotNumber) return;
+
+      if (!lotsMap.has(lotNumber)) {
+        lotsMap.set(lotNumber, {
+          id: lotNumber,
+          lotNumber: lotNumber,
+          brand: row['Brand'] || '',
+          fabric: row['Fabric'] || '',
+          style: row['Style'] || '',
+          garmentType: row['Garment Type'] || '',
+          partyName: row['Party Name'] || '',
+          season: row['Season'] || '',
+          supervisor: row['Supervisor'] || '',
+          savedBy: row['Saved By'] || '',
+          savedAt: row['Saved At'] || '',
+          timestamp: row['Timestamp'] || '',
+          totalShades: parseInt(row['Total Shades']) || 0,
+          totalPieces: parseInt(row['Total Pieces']) || 0,
+          status: row['Status'] || 'Pending',
+          lastUpdated: row['Last Updated'] || '',
+          completionDateTime: row['Completion Date/Time'] || '',
+          rowIndex: row.rowIndex,
+          assignmentsJSON: row['Assignments JSON'] || '{}',
+          shades: [],
+          completedShades: 0,
+          allShadesCompleted: false
+        });
+      }
+
+      const lot = lotsMap.get(lotNumber);
+      
+      if (lot.assignmentsJSON && !lot.shades.length) {
+        const assignments = parseAssignmentsJSON(lot.assignmentsJSON);
+        
+        // Process each shade
+        for (const [shadeName, shadeData] of Object.entries(assignments)) {
+          let karigars = [];
+          let shadeStatus = 'Pending';
+          let totalPcs = 0;
+          
+          if (shadeData.karigars && Array.isArray(shadeData.karigars)) {
+            // New format: multiple karigars per shade
+            karigars = shadeData.karigars.map(karigar => ({
+              karigarId: karigar.karigarId,
+              karigarName: karigar.karigarName,
+              pcs: karigar.pcs || 0,
+              status: karigar.status || 'Pending',
+              completed: karigar.status?.toLowerCase() === 'completed',
+              assignedAt: karigar.assignedAt || '',
+              completedAt: karigar.completedAt || ''
+            }));
+            shadeStatus = shadeData.status || 'Pending';
+            totalPcs = shadeData.totalPcs || karigars.reduce((sum, k) => sum + k.pcs, 0);
+          } else if (shadeData.karigarId) {
+            // Legacy format: single karigar per shade
+            karigars = [{
+              karigarId: shadeData.karigarId,
+              karigarName: shadeData.karigarName,
+              pcs: shadeData.pcs || 0,
+              status: shadeData.status || 'Pending',
+              completed: shadeData.status?.toLowerCase() === 'completed',
+              assignedAt: shadeData.updatedAt || '',
+              completedAt: ''
+            }];
+            shadeStatus = shadeData.status || 'Pending';
+            totalPcs = shadeData.pcs || 0;
+          }
+          
+          // Check if shade is completed (all karigars completed OR shade status is Completed)
+          const allKarigarsCompleted = karigars.length > 0 && karigars.every(k => k.completed);
+          const shadeCompleted = allKarigarsCompleted || shadeStatus?.toLowerCase() === 'completed';
+          
+          lot.shades.push({
+            id: `${lotNumber}_${shadeName}`,
+            shadeName: shadeName,
+            totalPcs: totalPcs,
+            karigars: karigars,
+            status: shadeCompleted ? 'Completed' : 'Pending',
+            completed: shadeCompleted,
+            updatedAt: shadeData.updatedAt || '',
+            lastUpdated: shadeData.lastUpdated || ''
+          });
+        }
+        
+        lot.completedShades = lot.shades.filter(s => s.completed).length;
+        lot.allShadesCompleted = lot.completedShades === lot.totalShades && lot.totalShades > 0;
+        lot.shades.sort((a, b) => a.shadeName.localeCompare(b.shadeName));
+      }
+    });
+
+    return Array.from(lotsMap.values()).sort((a, b) => a.lotNumber.localeCompare(b.lotNumber));
+  };
 
   const fetchSheetData = async () => {
     try {
@@ -61,7 +160,6 @@ const UpdateCompletionLot = () => {
         const rows = data.values.slice(1).map((row, index) => {
           const rowObject = {
             id: index,
-            // CRITICAL: rowIndex must be the actual sheet row number (header is row 1, data starts at row 2)
             rowIndex: index + 2,
           };
           
@@ -69,14 +167,11 @@ const UpdateCompletionLot = () => {
             rowObject[header] = row[colIndex] || '';
           });
           
-          // Set completed status based on the Status column
-          rowObject.completed = rowObject['Status']?.toLowerCase() === 'completed';
-          
           return rowObject;
         });
-        setSheetData(rows);
-        console.log('Total rows loaded:', rows.length);
-        console.log('Sample row:', rows[0]);
+        
+        const nestedData = transformToNestedStructure(rows);
+        setLotsData(nestedData);
       }
       setLoading(false);
     } catch (err) {
@@ -152,186 +247,281 @@ const UpdateCompletionLot = () => {
     }
   };
 
- 
-const updateSheetViaAppScript = async (rowsToUpdate) => {
-  try {
-    console.log('Rows to update:', rowsToUpdate);
-    
-    // Get current date/time in the format matching your sheet
-    const now = new Date();
-    const completionDateTime = now.toLocaleString('en-IN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    }).replace(/\//g, '-'); // Format: DD-MM-YYYY HH:MM:SS
+  // Updated: Mark entire shade as completed (all karigars)
+  const updateShadeStatus = async (updates) => {
+    try {
+      const now = new Date();
+      const completionDateTime = now.toLocaleString('en-IN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).replace(/\//g, '-');
 
-    // Create payload with completion date/time
-    let payload;
-    
-    if (rowsToUpdate.length === 1) {
-      // Single row update
-      payload = {
-        action: 'updateSingleCompletionStatus',
-        rowIndex: rowsToUpdate[0].rowIndex,
-        status: 'Completed',
+      const formData = new URLSearchParams();
+      formData.append('action', 'updateShadeCompletionStatus');
+      formData.append('data', JSON.stringify({
+        updates: updates,
         completionDateTime: completionDateTime
-      };
-    } else {
-      // Multiple rows update
-      payload = {
-        action: 'updateCompletionStatus',
-        rows: rowsToUpdate.map(row => ({
-          rowIndex: row.rowIndex,
-          status: 'Completed',
-          completionDateTime: completionDateTime
-        }))
-      };
-    }
+      }));
 
-    console.log('Sending payload:', payload);
+      const response = await fetch(APP_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString()
+      });
 
-    // Send as JSON
-    const response = await fetch(APP_SCRIPT_URL, {
-      method: 'POST',
-      mode: 'no-cors', // Keep this if it was working before
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload)
-    });
-
-    console.log('Request sent successfully');
-    return { success: true };
-
-  } catch (err) {
-    console.error('Error updating sheet:', err);
-    throw err;
-  }
-};
-  const handleRowSelect = (rowId) => {
-    const newSelected = new Set(selectedRows);
-    if (newSelected.has(rowId)) {
-      newSelected.delete(rowId);
-    } else {
-      newSelected.add(rowId);
-    }
-    setSelectedRows(newSelected);
-  };
-
-  const handleSelectAll = () => {
-    if (selectedRows.size === filteredData.length) {
-      setSelectedRows(new Set());
-    } else {
-      setSelectedRows(new Set(filteredData.map(row => row.id)));
+      return { success: true };
+      
+    } catch (err) {
+      console.error('Error updating sheet:', err);
+      throw err;
     }
   };
 
-const handleIndividualComplete = async (rowId) => {
-  setIsUpdating(true);
-  setUpdateStatus('Updating Google Sheet...');
-
-  try {
-    const row = sheetData.find(r => r.id === rowId);
-    
-    if (!row) {
-      throw new Error(`Row with id ${rowId} not found`);
+  // Handle shade selection (entire shade)
+  const handleShadeSelect = (lotId, shadeId) => {
+    const newSelected = new Map(selectedShades);
+    if (!newSelected.has(lotId)) {
+      newSelected.set(lotId, new Set());
     }
     
-    // CRITICAL: Ensure rowIndex is set correctly
-    const rowIndex = row.rowIndex || (row.id + 2);
+    const lotShades = newSelected.get(lotId);
+    if (lotShades.has(shadeId)) {
+      lotShades.delete(shadeId);
+    } else {
+      lotShades.add(shadeId);
+    }
     
-    console.log('Individual row to update:', {
-      id: row.id,
-      rowIndex: rowIndex,
-      lotNumber: row['Lot Number']
+    if (lotShades.size === 0) {
+      newSelected.delete(lotId);
+    }
+    
+    setSelectedShades(newSelected);
+  };
+
+  // Select all uncompleted shades in a lot
+  const handleSelectAllShadesInLot = (lot) => {
+    const newSelected = new Map(selectedShades);
+    const uncompletedShades = lot.shades.filter(s => !s.completed);
+    
+    if (uncompletedShades.length === 0) return;
+    
+    const lotShades = new Set();
+    uncompletedShades.forEach(shade => {
+      lotShades.add(shade.id);
     });
     
-    // Create a clean object with only the data we need
-    const updateData = {
-      rowIndex: rowIndex,
-      status: 'Completed'
-    };
-    
-    const result = await updateSheetViaAppScript([updateData]);
-    console.log('Update result:', result);
-    
-    // Update local state
-    const updatedSheetData = sheetData.map(r => {
-      if (r.id === rowId) {
-        return { ...r, completed: true, Status: 'Completed' };
+    newSelected.set(lot.id, lotShades);
+    setSelectedShades(newSelected);
+  };
+
+  // Deselect all shades in a lot
+  const handleDeselectAllInLot = (lotId) => {
+    const newSelected = new Map(selectedShades);
+    newSelected.delete(lotId);
+    setSelectedShades(newSelected);
+  };
+
+  const toggleLotExpansion = (lotId) => {
+    const newExpanded = new Set(expandedLots);
+    if (newExpanded.has(lotId)) {
+      newExpanded.delete(lotId);
+    } else {
+      newExpanded.add(lotId);
+    }
+    setExpandedLots(newExpanded);
+  };
+
+  // Updated: Handle shade completion (marks entire shade and all its karigars)
+  const handleUpdateCompletion = async () => {
+    if (selectedShades.size === 0) {
+      setUpdateStatus('Please select at least one shade to mark as completed');
+      return;
+    }
+
+    setIsUpdating(true);
+    setUpdateStatus('Updating Google Sheet...');
+
+    try {
+      const updates = [];
+      const updatedSelections = new Map(selectedShades);
+      
+      for (const [lotId, shadeIds] of selectedShades.entries()) {
+        const lot = lotsData.find(l => l.id === lotId);
+        if (lot) {
+          shadeIds.forEach(shadeId => {
+            const shade = lot.shades.find(s => s.id === shadeId);
+            if (shade && !shade.completed) {
+              // Mark entire shade as completed (all karigars)
+              updates.push({
+                lotNumber: lot.lotNumber,
+                shadeName: shade.shadeName,
+                status: 'Completed'
+                // No karigarId - this will mark all karigars in this shade
+              });
+            }
+          });
+        }
       }
-      return r;
-    });
-    
-    setSheetData(updatedSheetData);
-    setUpdateStatus('✅ Successfully marked lot as completed!');
-    
-    // Refresh data after delay
-    setTimeout(() => {
-      fetchSheetData();
-      setUpdateStatus('');
-    }, 2000);
-    
-  } catch (err) {
-    console.error('Individual update error:', err);
-    setUpdateStatus(`❌ Error: ${err.message}`);
-  } finally {
-    setIsUpdating(false);
-  }
-};
 
-const handleUpdateCompletion = async () => {
-  if (selectedRows.size === 0) {
-    setUpdateStatus('Please select at least one row to update');
-    return;
-  }
-
-  setIsUpdating(true);
-  setUpdateStatus('Updating Google Sheet...');
-
-  try {
-    const selectedRowsData = sheetData.filter(row => selectedRows.has(row.id));
-    
-    // Create clean update objects
-    const updateData = selectedRowsData.map(row => ({
-      rowIndex: row.rowIndex || (row.id + 2),
-      status: 'Completed'
-    }));
-    
-    console.log('Bulk update data:', updateData);
-    
-    const result = await updateSheetViaAppScript(updateData);
-    console.log('Bulk update result:', result);
-    
-    // Update local state
-    const updatedSheetData = sheetData.map(row => {
-      if (selectedRows.has(row.id)) {
-        return { ...row, completed: true, Status: 'Completed' };
+      if (updates.length === 0) {
+        setUpdateStatus('No uncompleted shades selected');
+        setIsUpdating(false);
+        return;
       }
-      return row;
-    });
-    
-    setSheetData(updatedSheetData);
-    setUpdateStatus(`✅ Successfully marked ${selectedRows.size} lot(s) as completed!`);
-    setSelectedRows(new Set());
-    
-    // Refresh data after delay
-    setTimeout(() => {
-      fetchSheetData();
-      setUpdateStatus('');
-    }, 2000);
-    
-  } catch (err) {
-    console.error('Bulk update error:', err);
-    setUpdateStatus(`❌ Error: ${err.message}`);
-  } finally {
-    setIsUpdating(false);
-  }
-};
+
+      await updateShadeStatus(updates);
+      
+      // Update local state
+      const updatedLotsData = lotsData.map(lot => {
+        if (updatedSelections.has(lot.id)) {
+          const selectedShadeIds = updatedSelections.get(lot.id);
+          const updatedShades = lot.shades.map(shade => {
+            if (selectedShadeIds.has(shade.id) && !shade.completed) {
+              // Mark all karigars in this shade as completed
+              const updatedKarigars = shade.karigars.map(karigar => ({
+                ...karigar,
+                status: 'Completed',
+                completed: true,
+                completedAt: new Date().toISOString()
+              }));
+              
+              return { 
+                ...shade, 
+                karigars: updatedKarigars,
+                completed: true, 
+                status: 'Completed',
+                updatedAt: new Date().toISOString()
+              };
+            }
+            return shade;
+          });
+          
+          const completedCount = updatedShades.filter(s => s.completed).length;
+          const allCompleted = completedCount === lot.totalShades;
+          
+          return {
+            ...lot,
+            shades: updatedShades,
+            completedShades: completedCount,
+            allShadesCompleted: allCompleted,
+            status: allCompleted ? 'Completed' : 'Pending'
+          };
+        }
+        return lot;
+      });
+      
+      setLotsData(updatedLotsData);
+      setUpdateStatus(`✅ Successfully marked ${updates.length} shade(s) as completed!`);
+      setSelectedShades(new Map());
+      
+      // Refresh data after 2 seconds
+      setTimeout(() => {
+        fetchSheetData();
+      }, 2000);
+      
+    } catch (err) {
+      console.error('Bulk update error:', err);
+      setUpdateStatus(`❌ Error: ${err.message}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // Handle individual shade completion
+  const handleIndividualComplete = async (lotId, shadeId) => {
+    setIsUpdating(true);
+    setUpdateStatus('Updating Google Sheet...');
+
+    try {
+      const lot = lotsData.find(l => l.id === lotId);
+      const shade = lot?.shades.find(s => s.id === shadeId);
+      
+      if (!shade || shade.completed) {
+        throw new Error('Shade already completed or not found');
+      }
+      
+      const updates = [{
+        lotNumber: lot.lotNumber,
+        shadeName: shade.shadeName,
+        status: 'Completed'
+      }];
+      
+      await updateShadeStatus(updates);
+      
+      // Update local state
+      const updatedLotsData = lotsData.map(l => {
+        if (l.id === lotId) {
+          const updatedShades = l.shades.map(s => {
+            if (s.id === shadeId) {
+              const updatedKarigars = s.karigars.map(karigar => ({
+                ...karigar,
+                status: 'Completed',
+                completed: true,
+                completedAt: new Date().toISOString()
+              }));
+              
+              return { 
+                ...s, 
+                karigars: updatedKarigars,
+                completed: true, 
+                status: 'Completed',
+                updatedAt: new Date().toISOString()
+              };
+            }
+            return s;
+          });
+          
+          const completedCount = updatedShades.filter(s => s.completed).length;
+          const allCompleted = completedCount === l.totalShades;
+          
+          return {
+            ...l,
+            shades: updatedShades,
+            completedShades: completedCount,
+            allShadesCompleted: allCompleted,
+            status: allCompleted ? 'Completed' : 'Pending'
+          };
+        }
+        return l;
+      });
+      
+      setLotsData(updatedLotsData);
+      setUpdateStatus(`✅ Successfully marked shade "${shade.shadeName}" as completed!`);
+      
+      // Remove from selection if present
+      if (selectedShades.has(lotId)) {
+        const newSelected = new Map(selectedShades);
+        const lotShades = newSelected.get(lotId);
+        if (lotShades) {
+          lotShades.delete(shadeId);
+          if (lotShades.size === 0) {
+            newSelected.delete(lotId);
+          }
+        }
+        setSelectedShades(newSelected);
+      }
+      
+      // Refresh data after 2 seconds
+      setTimeout(() => {
+        fetchSheetData();
+      }, 2000);
+      
+    } catch (err) {
+      console.error('Individual update error:', err);
+      setUpdateStatus(`❌ Error: ${err.message}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const handleSupervisorSelect = (supervisor) => {
     setSelectedSupervisor(supervisor.name);
     setShowAllSupervisors(false);
@@ -347,32 +537,265 @@ const handleUpdateCompletion = async () => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
 
-  const filteredData = sheetData.filter(row => {
-    if (selectedSupervisor) {
-      const rowSupervisor = row['Supervisor'] || '';
-      const normalizedRowSupervisor = rowSupervisor
-        .toLowerCase()
-        .split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      if (normalizedRowSupervisor !== selectedSupervisor) return false;
-    }
-    
-    if (!filterText) return true;
-    
-    if (filterColumn === 'all') {
-      return Object.values(row).some(value => 
-        String(value).toLowerCase().includes(filterText.toLowerCase())
-      );
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
-      return String(row[filterColumn] || '').toLowerCase().includes(filterText.toLowerCase());
+      setSortBy(column);
+      setSortOrder('asc');
     }
-  });
+  };
 
-  const displayedSupervisors = showAllSupervisors ? supervisors : supervisors.slice(0, 5);
+  const getSortedLots = () => {
+    let filtered = lotsData.filter(lot => {
+      if (selectedSupervisor) {
+        const normalizedSupervisor = lot.supervisor
+          ?.toLowerCase()
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        if (normalizedSupervisor !== selectedSupervisor) return false;
+      }
+      
+      if (!filterText) return true;
+      
+      const searchLower = filterText.toLowerCase();
+      return (
+        lot.lotNumber.toLowerCase().includes(searchLower) ||
+        lot.brand.toLowerCase().includes(searchLower) ||
+        lot.fabric.toLowerCase().includes(searchLower) ||
+        lot.garmentType.toLowerCase().includes(searchLower) ||
+        lot.style.toLowerCase().includes(searchLower) ||
+        lot.partyName.toLowerCase().includes(searchLower) ||
+        lot.supervisor.toLowerCase().includes(searchLower) ||
+        lot.shades.some(shade => 
+          shade.shadeName.toLowerCase().includes(searchLower) ||
+          shade.karigars.some(k => 
+            k.karigarName.toLowerCase().includes(searchLower) ||
+            k.karigarId.toLowerCase().includes(searchLower)
+          )
+        )
+      );
+    });
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      switch(sortBy) {
+        case 'completion':
+          const aPercent = a.completedShades / a.totalShades;
+          const bPercent = b.completedShades / b.totalShades;
+          comparison = aPercent - bPercent;
+          break;
+        case 'supervisor':
+          comparison = a.supervisor.localeCompare(b.supervisor);
+          break;
+        default:
+          comparison = a.lotNumber.localeCompare(b.lotNumber);
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    return filtered;
+  };
+
+  const exportToPDF = async () => {
+    setIsExporting(true);
+    setUpdateStatus('Preparing PDF export...');
+
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      
+      const exportContainer = document.createElement('div');
+      exportContainer.style.padding = '20px';
+      exportContainer.style.backgroundColor = 'white';
+      exportContainer.style.fontFamily = 'Arial, sans-serif';
+      
+      const header = document.createElement('div');
+      header.innerHTML = `
+        <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #667eea;">
+          <h1 style="color: #1e293b; margin: 0;">Shade Completion Report</h1>
+          <p style="color: #64748b; margin-top: 10px;">Generated on: ${new Date().toLocaleString()}</p>
+          ${selectedSupervisor ? `<p style="color: #4f46e5;">Filtered by Supervisor: ${selectedSupervisor}</p>` : ''}
+          ${filterText ? `<p style="color: #4f46e5;">Search: ${filterText}</p>` : ''}
+        </div>
+      `;
+      exportContainer.appendChild(header);
+      
+      const mainTable = document.createElement('table');
+      mainTable.style.width = '100%';
+      mainTable.style.borderCollapse = 'collapse';
+      mainTable.style.marginBottom = '30px';
+      
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      headerRow.style.backgroundColor = '#f1f5f9';
+      headerRow.style.borderBottom = '2px solid #e2e8f0';
+      
+      const headers = ['Lot Number', 'Brand', 'Fabric', 'Garment Type', 'Party Name', 'Supervisor', 'Shades', 'Completion %', 'Status'];
+      headers.forEach(headerText => {
+        const th = document.createElement('th');
+        th.textContent = headerText;
+        th.style.padding = '12px';
+        th.style.textAlign = 'left';
+        th.style.fontWeight = '600';
+        th.style.color = '#1e293b';
+        th.style.borderBottom = '2px solid #e2e8f0';
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      mainTable.appendChild(thead);
+      
+      const tbody = document.createElement('tbody');
+      filteredLots.forEach(lot => {
+        const row = document.createElement('tr');
+        row.style.borderBottom = '1px solid #e2e8f0';
+        
+        const completionPercentage = lot.totalShades > 0 ? (lot.completedShades / lot.totalShades) * 100 : 0;
+        
+        const rowData = [
+          `#${lot.lotNumber}`,
+          lot.brand || '-',
+          lot.fabric || '-',
+          lot.garmentType || '-',
+          lot.partyName || '-',
+          lot.supervisor || '-',
+          `${lot.completedShades}/${lot.totalShades}`,
+          `${Math.round(completionPercentage)}%`,
+          lot.allShadesCompleted ? 'Completed' : 'In Progress'
+        ];
+        
+        rowData.forEach(cellData => {
+          const td = document.createElement('td');
+          td.textContent = cellData;
+          td.style.padding = '10px 12px';
+          td.style.color = '#334155';
+          
+          if (cellData === 'Completed') {
+            td.style.color = '#10b981';
+            td.style.fontWeight = '600';
+          } else if (cellData === 'In Progress') {
+            td.style.color = '#f59e0b';
+            td.style.fontWeight = '600';
+          }
+          
+          row.appendChild(td);
+        });
+        
+        tbody.appendChild(row);
+        
+        // Add shade details with karigars
+        if (lot.shades.length > 0) {
+          const shadeDetailRow = document.createElement('tr');
+          const shadeDetailCell = document.createElement('td');
+          shadeDetailCell.colSpan = 9;
+          shadeDetailCell.style.padding = '12px';
+          shadeDetailCell.style.backgroundColor = '#f8fafc';
+          
+          const shadeTable = document.createElement('table');
+          shadeTable.style.width = '100%';
+          shadeTable.style.borderCollapse = 'collapse';
+          shadeTable.style.marginTop = '10px';
+          shadeTable.style.border = '1px solid #e2e8f0';
+          
+          const shadeHeader = document.createElement('tr');
+          shadeHeader.style.backgroundColor = '#e2e8f0';
+          ['Shade Name', 'Karigars', 'Total Pieces', 'Status', 'Completion'].forEach(shadeHeaderText => {
+            const th = document.createElement('th');
+            th.textContent = shadeHeaderText;
+            th.style.padding = '8px';
+            th.style.textAlign = 'left';
+            th.style.fontSize = '0.85rem';
+            th.style.fontWeight = '600';
+            th.style.borderBottom = '1px solid #cbd5e1';
+            shadeHeader.appendChild(th);
+          });
+          shadeTable.appendChild(shadeHeader);
+          
+          lot.shades.forEach(shade => {
+            const shadeRow = document.createElement('tr');
+            shadeRow.style.borderBottom = '1px solid #e2e8f0';
+            
+            // Karigars list as string
+            const karigarsList = shade.karigars.map(k => `${k.karigarName || k.karigarId} (${k.pcs} pcs)`).join(', ');
+            
+            const shadeData = [
+              shade.shadeName,
+              karigarsList || '-',
+              shade.totalPcs.toString(),
+              shade.completed ? 'Completed' : 'Pending',
+              shade.completed ? '✓ Done' : '⏳ In Progress'
+            ];
+            
+            shadeData.forEach(data => {
+              const td = document.createElement('td');
+              td.textContent = data;
+              td.style.padding = '8px';
+              td.style.fontSize = '0.85rem';
+              td.style.color = '#475569';
+              
+              if (data === 'Completed' || data === '✓ Done') {
+                td.style.color = '#10b981';
+              } else if (data === 'Pending' || data === '⏳ In Progress') {
+                td.style.color = '#f59e0b';
+              }
+              
+              shadeRow.appendChild(td);
+            });
+            
+            shadeTable.appendChild(shadeRow);
+          });
+          
+          shadeDetailCell.appendChild(shadeTable);
+          shadeDetailRow.appendChild(shadeDetailCell);
+          tbody.appendChild(shadeDetailRow);
+        }
+      });
+      
+      mainTable.appendChild(tbody);
+      exportContainer.appendChild(mainTable);
+      
+      const footer = document.createElement('div');
+      footer.style.marginTop = '30px';
+      footer.style.paddingTop = '20px';
+      footer.style.borderTop = '2px solid #e2e8f0';
+      footer.style.textAlign = 'center';
+      footer.style.color = '#64748b';
+      footer.innerHTML = `
+        <p><strong>Summary:</strong> ${filteredLots.length} Lots | Total Shades: ${filteredLots.reduce((sum, lot) => sum + lot.totalShades, 0)} | Completed Shades: ${filteredLots.reduce((sum, lot) => sum + lot.completedShades, 0)}</p>
+        <p style="font-size: 0.85rem;">Generated by Shade Completion Manager</p>
+      `;
+      exportContainer.appendChild(footer);
+      
+      const opt = {
+        margin: [0.5, 0.5, 0.5, 0.5],
+        filename: `shade-completion-report-${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, letterRendering: true },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
+      };
+      
+      await html2pdf().set(opt).from(exportContainer).save();
+      
+      setUpdateStatus('✅ PDF exported successfully!');
+      setTimeout(() => setUpdateStatus(''), 3000);
+    } catch (error) {
+      console.error('PDF export error:', error);
+      setUpdateStatus('❌ Error exporting PDF. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const filteredLots = getSortedLots();
+  const totalSelectedShades = Array.from(selectedShades.values()).reduce(
+    (total, shadeSet) => total + shadeSet.size, 0
+  );
+
+  const displayedSupervisors = showAllSupervisors ? supervisors : supervisors.slice(0, 8);
 
   if (loading) {
     return (
@@ -403,174 +826,173 @@ const handleUpdateCompletion = async () => {
   return (
     <div className="ucl-update-completion-lot">
       <div className="ucl-main-card">
-        {/* Gradient Header */}
-        <div className="ucl-gradient-header">
-          <div className="ucl-header-content">
-            <div className="ucl-title-section">
-              <h1>UPDATE COMPLETION LOT AS PER SHADES</h1>
-              <p>
-                <span>📋</span>
-                Track and manage lot completions
-              </p>
+        {/* Modern Gradient Header */}
+        <div className="ucl-modern-header">
+          <div className="ucl-header-background">
+            <div className="ucl-header-overlay"></div>
+          </div>
+          <div className="ucl-header-content-modern">
+            <div className="ucl-header-left">
+              <div className="ucl-header-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M20 7L12 12L4 7M12 22V12M20 12V16L12 21L4 16V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M20 7L12 12L4 7L12 2L20 7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="ucl-header-title">
+                <h1>Shade Completion Manager</h1>
+                <p>Complete entire shades - marks all karigars assigned to that shade automatically</p>
+              </div>
             </div>
-            <div className="ucl-stats-grid">
-              <div className="ucl-stat-circle">
-                <span className="ucl-stat-icon">📦</span>
-                <div className="ucl-stat-info">
-                  <h3>Total Lots</h3>
-                  <span>{sheetData.length}</span>
-                </div>
+            <div className="ucl-header-stats">
+              <div className="ucl-stat-card">
+                <div className="ucl-stat-value">{lotsData.length}</div>
+                <div className="ucl-stat-label">Active Lots</div>
               </div>
-              <div className="ucl-stat-circle">
-                <span className="ucl-stat-icon">✅</span>
-                <div className="ucl-stat-info">
-                  <h3>Selected</h3>
-                  <span>{selectedRows.size}</span>
-                </div>
+              <div className="ucl-stat-card">
+                <div className="ucl-stat-value">{lotsData.reduce((sum, lot) => sum + lot.totalShades, 0)}</div>
+                <div className="ucl-stat-label">Total Shades</div>
               </div>
-              <div className="ucl-stat-circle">
-                <span className="ucl-stat-icon">✓</span>
-                <div className="ucl-stat-info">
-                  <h3>Completed</h3>
-                  <span>{sheetData.filter(row => row.completed).length}</span>
-                </div>
+              <div className="ucl-stat-card">
+                <div className="ucl-stat-value">{lotsData.reduce((sum, lot) => sum + lot.completedShades, 0)}</div>
+                <div className="ucl-stat-label">Completed</div>
+              </div>
+              <div className="ucl-stat-card">
+                <div className="ucl-stat-value">{totalSelectedShades}</div>
+                <div className="ucl-stat-label">Selected</div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="ucl-search-bar">
-          <div className="ucl-search-wrapper">
-            <span className="ucl-search-icon">🔍</span>
-            <input
-              type="text"
-              placeholder="Search lots, karigars, brands..."
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              className="ucl-search-input"
-              disabled={isUpdating}
-            />
-          </div>
-          <select 
-            value={filterColumn} 
-            onChange={(e) => setFilterColumn(e.target.value)}
-            className="ucl-filter-select"
-            disabled={isUpdating}
-          >
-            <option value="all">All Columns</option>
-            {columns.map(col => (
-              <option key={col} value={col}>{col}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Supervisor Section */}
-        <div className="ucl-supervisor-section">
-          <div className="ucl-section-title">
-            <h2>👥 Filter by Supervisor</h2>
-            <span>{supervisors.length} available</span>
+        {/* Controls Bar */}
+        <div className="ucl-controls-bar">
+          <div className="ucl-search-section">
+            <div className="ucl-search-container">
+              <svg className="ucl-search-svg" width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              <input
+                type="text"
+                placeholder="Search by lot number, brand, garment type, shade, karigar..."
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                className="ucl-search-input-modern"
+                disabled={isUpdating}
+              />
+            </div>
           </div>
           
-          <div className="ucl-supervisor-grid">
-            {displayedSupervisors.map((supervisor, index) => (
-              <div
-                key={index}
-                className={`ucl-supervisor-card ${selectedSupervisor === supervisor.name ? 'active' : ''} ${isUpdating ? 'disabled' : ''}`}
-                onClick={() => !isUpdating && handleSupervisorSelect(supervisor)}
-              >
-                <div className="ucl-supervisor-avatar">
-                  {getInitials(supervisor.name)}
-                </div>
-                <div className="ucl-supervisor-info">
-                  <h3>{supervisor.name}</h3>
-                  <p>
-                    <span>👤</span>
-                    {supervisor.type}
-                    <span className="ucl-supervisor-badge">Active</span>
-                  </p>
-                </div>
-              </div>
-            ))}
-            {!showAllSupervisors && supervisors.length > 5 && (
-              <div 
-                className={`ucl-supervisor-card ucl-more-card ${isUpdating ? 'disabled' : ''}`} 
-                onClick={() => !isUpdating && setShowAllSupervisors(true)}
-              >
-                <div className="ucl-supervisor-avatar" style={{ background: '#b8d1f0' }}>
-                  +{supervisors.length - 5}
-                </div>
-                <div className="ucl-supervisor-info">
-                  <h3>View All</h3>
-                  <p>{supervisors.length - 5} more supervisors</p>
-                </div>
-              </div>
-            )}
-            {showAllSupervisors && supervisors.length > 5 && (
-              <div 
-                className={`ucl-supervisor-card ucl-more-card ${isUpdating ? 'disabled' : ''}`} 
-                onClick={() => !isUpdating && setShowAllSupervisors(false)}
-              >
-                <div className="ucl-supervisor-avatar" style={{ background: '#2a5298' }}>
-                  ↑
-                </div>
-                <div className="ucl-supervisor-info">
-                  <h3>Show Less</h3>
-                  <p>Collapse list</p>
-                </div>
-              </div>
-            )}
+          <div className="ucl-view-controls">
+            <select 
+              className="ucl-sort-select"
+              value={sortBy}
+              onChange={(e) => handleSort(e.target.value)}
+            >
+              <option value="lotNumber">Sort by Lot #</option>
+              <option value="completion">Sort by Completion %</option>
+              <option value="supervisor">Sort by Supervisor</option>
+            </select>
+            <button 
+              className="ucl-export-btn"
+              onClick={exportToPDF}
+              disabled={isExporting || filteredLots.length === 0}
+            >
+              {isExporting ? (
+                <>
+                  <span className="ucl-spinner-small"></span>
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 3v12m0 0-3-3m3 3 3-3M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                  Export PDF
+                </>
+              )}
+            </button>
+            <button 
+              className="ucl-refresh-btn-small"
+              onClick={fetchSheetData}
+              disabled={isUpdating}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M23 4V10H17M1 20V14H7M3.51 9C4.73 5.8 7.96 3.5 11.66 3.5C16.73 3.5 20.89 6.92 22.02 11.5M20.49 15C19.27 18.2 16.04 20.5 12.34 20.5C7.27 20.5 3.11 17.08 1.98 12.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </button>
           </div>
-
-          {selectedSupervisor && (
-            <div className="ucl-active-filter">
-              <div className="ucl-filter-tag">
-                <span className="ucl-filter-label">Active Filter:</span>
-                <span className="ucl-filter-value">
-                  <span>👤</span>
-                  {selectedSupervisor}
-                </span>
-                <span className="ucl-filter-count">
-                  {filteredData.length} lots found
-                </span>
-              </div>
-              <button onClick={clearSupervisorFilter} className="ucl-clear-filter" disabled={isUpdating}>
-                <span>✕</span> Clear Filter
-              </button>
-            </div>
-          )}
         </div>
 
-        {/* Action Bar */}
-        <div className="ucl-action-bar">
-          <div className="ucl-selected-info">
-            <div className="ucl-selected-badge">
-              <span>✓</span>
-              {selectedRows.size} Selected
-            </div>
+        {/* Supervisor Filter */}
+        <div className="ucl-supervisor-filter">
+          <div className="ucl-filter-header">
+            <h3>Filter by Supervisor</h3>
+            <span className="ucl-supervisor-count">{supervisors.length} available</span>
+          </div>
+          
+          <div className="ucl-supervisor-chips">
             <button 
-              onClick={handleSelectAll} 
-              className="ucl-select-all-btn"
-              disabled={isUpdating || filteredData.length === 0}
+              className={`ucl-supervisor-chip ${!selectedSupervisor ? 'active' : ''}`}
+              onClick={clearSupervisorFilter}
             >
-              {selectedRows.size === filteredData.length ? 'Deselect All' : 'Select All'}
+              All Supervisors
             </button>
+            {displayedSupervisors.map((supervisor) => (
+              <button
+                key={supervisor.name}
+                className={`ucl-supervisor-chip ${selectedSupervisor === supervisor.name ? 'active' : ''}`}
+                onClick={() => handleSupervisorSelect(supervisor)}
+              >
+                <span className="ucl-chip-avatar">{getInitials(supervisor.name)}</span>
+                {supervisor.name}
+              </button>
+            ))}
+            {!showAllSupervisors && supervisors.length > 8 && (
+              <button 
+                className="ucl-supervisor-chip ucl-show-more"
+                onClick={() => setShowAllSupervisors(true)}
+              >
+                +{supervisors.length - 8} more
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Bulk Action Bar */}
+        <div className="ucl-bulk-action-bar">
+          <div className="ucl-selection-summary">
+            {totalSelectedShades > 0 ? (
+              <>
+                <span className="ucl-selection-badge">{totalSelectedShades} Shade{totalSelectedShades !== 1 ? 's' : ''} Selected</span>
+                <button 
+                  className="ucl-clear-selection"
+                  onClick={() => setSelectedShades(new Map())}
+                >
+                  Clear All
+                </button>
+              </>
+            ) : (
+              <span className="ucl-no-selection">No shades selected</span>
+            )}
           </div>
           
           <button 
             onClick={handleUpdateCompletion} 
-            className="ucl-mark-complete-btn"
-            disabled={selectedRows.size === 0 || isUpdating}
+            className="ucl-bulk-complete-btn"
+            disabled={totalSelectedShades === 0 || isUpdating}
           >
             {isUpdating ? (
               <>
                 <span className="ucl-spinner-small"></span>
-                Updating...
+                Processing...
               </>
             ) : (
               <>
-                <span>✓</span>
-                Mark Selected as Completed
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Mark Selected Shades as Completed
               </>
             )}
           </button>
@@ -578,115 +1000,254 @@ const handleUpdateCompletion = async () => {
 
         {/* Status Toast */}
         {updateStatus && (
-          <div className={`ucl-status-toast ${updateStatus.includes('❌') ? 'error' : updateStatus.includes('✅') ? 'success' : 'info'}`}>
-            <span>{updateStatus}</span>
+          <div className={`ucl-toast ${updateStatus.includes('❌') ? 'error' : updateStatus.includes('✅') ? 'success' : 'info'}`}>
+            <div className="ucl-toast-content">
+              <span>{updateStatus}</span>
+            </div>
           </div>
         )}
 
-        {/* Modern Table */}
-        <div className="ucl-table-wrapper">
-          <table className="ucl-modern-table">
-            <thead>
-              <tr>
-                <th style={{ width: '50px' }}></th>
-                {columns.map(column => (
-                  <th key={column}>{column}</th>
-                ))}
-                <th style={{ width: '150px' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredData.length === 0 ? (
+        {/* Main Table */}
+        <div className="ucl-table-container">
+          {filteredLots.length === 0 ? (
+            <div className="ucl-empty-state-modern">
+              <div className="ucl-empty-icon-wrapper">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
+                  <path d="M9 12H15M12 9V15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <h3>No lots found</h3>
+              <p>{selectedSupervisor ? `No lots assigned to ${selectedSupervisor}` : 'Try adjusting your search or filter'}</p>
+            </div>
+          ) : (
+            <table className="ucl-data-table">
+              <thead>
                 <tr>
-                  <td colSpan={columns.length + 2} className="ucl-empty-state">
-                    <div className="ucl-empty-content">
-                      <span className="ucl-empty-icon">📭</span>
-                      <h3>No lots found</h3>
-                      <p>
-                        {selectedSupervisor 
-                          ? `No lots assigned to ${selectedSupervisor}`
-                          : 'Try adjusting your search or filter'}
-                      </p>
-                    </div>
-                  </td>
+                  <th className="ucl-table-expand-col"></th>
+                  <th className="ucl-table-select-col"></th>
+                  <th onClick={() => handleSort('lotNumber')} className="ucl-sortable-header">
+                    Lot Number {sortBy === 'lotNumber' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th>Garment Type</th>
+                  <th>Brand</th>
+                  <th>Fabric</th>
+                  <th>Party Name</th>
+                  <th onClick={() => handleSort('supervisor')} className="ucl-sortable-header">
+                    Supervisor {sortBy === 'supervisor' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th>Shades Assigned</th>
+                  <th onClick={() => handleSort('completion')} className="ucl-sortable-header">
+                    Completion {sortBy === 'completion' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th>Actions</th>
                 </tr>
-              ) : (
-                filteredData.map((row) => (
-                  <tr 
-                    key={row.id} 
-                    className={`${selectedRows.has(row.id) ? 'selected' : ''} ${row.completed ? 'completed-row' : ''}`}
-                  >
-                    <td onClick={(e) => e.stopPropagation()} style={{ textAlign: 'center' }}>
-                      <div 
-                        className={`ucl-custom-checkbox ${selectedRows.has(row.id) ? 'checked' : ''} ${row.completed ? 'disabled' : ''}`}
-                        onClick={() => !row.completed && !isUpdating && handleRowSelect(row.id)}
-                      >
-                        {selectedRows.has(row.id) && <span>✓</span>}
-                      </div>
-                    </td>
-                    {columns.map(column => (
-                      <td key={`${row.id}-${column}`}>
-                        {column === 'Lot Number' ? (
-                          <span className="ucl-lot-badge">#{row[column] || '-'}</span>
-                        ) : column === 'Shade' ? (
-                          <span className="ucl-shade-pill">{row[column] || '-'}</span>
-                        ) : column === 'Supervisor' ? (
-                          <span className="ucl-supervisor-badge-cell">
-                            {row[column] || '-'}
+              </thead>
+              <tbody>
+                {filteredLots.map((lot) => {
+                  const isExpanded = expandedLots.has(lot.id);
+                  const lotSelectedShades = selectedShades.get(lot.id) || new Set();
+                  const uncompletedShadesCount = lot.shades.filter(s => !s.completed).length;
+                  const completionPercentage = lot.totalShades > 0 ? (lot.completedShades / lot.totalShades) * 100 : 0;
+                  const allShadesSelected = lotSelectedShades.size === uncompletedShadesCount && uncompletedShadesCount > 0;
+                  
+                  return (
+                    <React.Fragment key={lot.id}>
+                      {/* Main Lot Row */}
+                      <tr className={`ucl-table-row ${lot.allShadesCompleted ? 'completed-lot' : ''}`}>
+                        <td className="ucl-table-expand-cell">
+                          <button 
+                            className="ucl-table-expand-btn"
+                            onClick={() => toggleLotExpansion(lot.id)}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                              <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                            </svg>
+                          </button>
+                        </td>
+                        <td className="ucl-table-select-cell">
+                          {!lot.allShadesCompleted && uncompletedShadesCount > 0 && (
+                            <input
+                              type="checkbox"
+                              checked={allShadesSelected}
+                              onChange={() => {
+                                if (allShadesSelected) {
+                                  handleDeselectAllInLot(lot.id);
+                                } else {
+                                  handleSelectAllShadesInLot(lot);
+                                }
+                              }}
+                              className="ucl-table-checkbox"
+                            />
+                          )}
+                        </td>
+                        <td className="ucl-lot-number-cell">
+                          <span className="ucl-lot-number-link">#{lot.lotNumber}</span>
+                          {lot.allShadesCompleted && (
+                            <span className="ucl-completion-badge-small">Complete</span>
+                          )}
+                        </td>
+                        <td className="ucl-garment-type-cell">
+                          <span className="ucl-garment-type-badge">{lot.garmentType || '-'}</span>
+                        </td>
+                        <td>{lot.brand || '-'}</td>
+                        <td>{lot.fabric || '-'}</td>
+                        <td>{lot.partyName || '-'}</td>
+                        <td>{lot.supervisor || '-'}</td>
+                        <td className="ucl-shades-count-cell">
+                          <span className="ucl-shades-count-badge">
+                            {lot.completedShades}/{lot.totalShades}
                           </span>
-                        ) : column === 'Karigar Name' ? (
-                          <span className="ucl-karigar-name">
-                            <span className="ucl-name-icon">👤</span>
-                            {row[column] || '-'}
-                          </span>
-                        ) : column === 'Status' ? (
-                          <span className={`ucl-status-indicator ${row[column]?.toLowerCase() === 'completed' ? 'completed' : 'pending'}`}>
-                            {row[column] || 'Pending'}
-                          </span>
-                        ) : (
-                          row[column] || '-'
-                        )}
-                      </td>
-                    ))}
-                    <td>
-                      <button
-                        className={`ucl-complete-btn ${row.completed ? 'completed' : ''}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleIndividualComplete(row.id);
-                        }}
-                        disabled={row.completed || isUpdating}
-                      >
-                        {isUpdating ? (
-                          <span className="ucl-spinner-small"></span>
-                        ) : row.completed ? (
-                          <>✓ Completed</>
-                        ) : (
-                          <>✓ Complete</>
-                        )}
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                        </td>
+                        <td className="ucl-progress-cell">
+                          <div className="ucl-table-progress-bar">
+                            <div 
+                              className="ucl-table-progress-fill"
+                              style={{ width: `${completionPercentage}%` }}
+                            >
+                              <span className="ucl-progress-percent">{Math.round(completionPercentage)}%</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="ucl-actions-cell">
+                          {!lot.allShadesCompleted && uncompletedShadesCount > 0 && (
+                            <button
+                              className="ucl-quick-select-btn"
+                              onClick={() => {
+                                if (allShadesSelected) {
+                                  handleDeselectAllInLot(lot.id);
+                                } else {
+                                  handleSelectAllShadesInLot(lot);
+                                }
+                              }}
+                              title={allShadesSelected ? "Deselect all shades" : "Select all uncompleted shades"}
+                            >
+                              {allShadesSelected ? 'Deselect All' : `Select All (${uncompletedShadesCount})`}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      
+                      {/* Expanded Shades Sub-table */}
+                      {isExpanded && (
+                        <tr className="ucl-expanded-row">
+                          <td colSpan="11">
+                            <div className="ucl-expanded-content">
+                              <div className="ucl-shades-subtable-header">
+                                <h4>Shade Details for Lot #{lot.lotNumber}</h4>
+                                <div className="ucl-shades-summary">
+                                  <span>Total Shades: {lot.totalShades}</span>
+                                  <span>Completed: {lot.completedShades}</span>
+                                  <span>Pending: {uncompletedShadesCount}</span>
+                                </div>
+                              </div>
+                              <table className="ucl-shades-subtable">
+                                <thead>
+                                  <tr>
+                                    <th className="ucl-subtable-select"></th>
+                                    <th>Shade Name</th>
+                                    <th>Assigned Karigars</th>
+                                    <th>Total Pieces</th>
+                                    <th>Status</th>
+                                    <th>Last Updated</th>
+                                    <th>Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {lot.shades.map((shade) => {
+                                    const isSelected = lotSelectedShades.has(shade.id);
+                                    const karigarsList = shade.karigars.map(k => 
+                                      `${k.karigarName || k.karigarId} (${k.pcs} pcs)`
+                                    ).join(', ');
+                                    
+                                    return (
+                                      <tr key={shade.id} className={`ucl-shade-row ${shade.completed ? 'completed-shade' : ''}`}>
+                                        <td className="ucl-subtable-select">
+                                          {!shade.completed && (
+                                            <input
+                                              type="checkbox"
+                                              checked={isSelected}
+                                              onChange={() => handleShadeSelect(lot.id, shade.id)}
+                                              className="ucl-table-checkbox"
+                                            />
+                                          )}
+                                        </td>
+                                        <td>
+                                          <span className="ucl-shade-name-cell">
+                                            🎨 {shade.shadeName}
+                                          </span>
+                                        </td>
+                                        <td className="ucl-karigars-list">
+                                          <div className="ucl-karigar-chips">
+                                            {shade.karigars.map((karigar, idx) => (
+                                              <span key={idx} className={`ucl-karigar-chip ${karigar.completed ? 'completed' : ''}`}>
+                                                {karigar.karigarName || karigar.karigarId}
+                                                <span className="ucl-karigar-pcs">({karigar.pcs} pcs)</span>
+                                                {karigar.completed && <span className="ucl-check-mark">✓</span>}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </td>
+                                        <td>{shade.totalPcs}</td>
+                                        <td>
+                                          {shade.completed ? (
+                                            <span className="ucl-status-badge completed">
+                                              ✓ Completed
+                                            </span>
+                                          ) : (
+                                            <span className="ucl-status-badge pending">
+                                              ⏳ Pending
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="ucl-last-updated">
+                                          {shade.lastUpdated || shade.updatedAt || '-'}
+                                        </td>
+                                        <td>
+                                          {!shade.completed && (
+                                            <button
+                                              className="ucl-complete-btn"
+                                              onClick={() => handleIndividualComplete(lot.id, shade.id)}
+                                              disabled={isUpdating}
+                                            >
+                                              Complete Shade
+                                            </button>
+                                          )}
+                                          {shade.completed && (
+                                            <span className="ucl-completed-mark">✓ Done</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="ucl-table-footer">
-          <div className="ucl-footer-info">
-            Showing {filteredData.length} of {sheetData.length} lots
+        <div className="ucl-footer-modern">
+          <div className="ucl-footer-stats">
+            Showing {filteredLots.length} of {lotsData.length} lots
           </div>
-          <div className="ucl-footer-actions">
-            <button 
-              className="ucl-footer-btn" 
-              onClick={fetchSheetData}
-              disabled={isUpdating}
-            >
-              <span>↻</span> Refresh
-            </button>
-          </div>
+          <button 
+            className="ucl-refresh-btn"
+            onClick={fetchSheetData}
+            disabled={isUpdating}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M23 4V10H17M1 20V14H7M3.51 9C4.73 5.8 7.96 3.5 11.66 3.5C16.73 3.5 20.89 6.92 22.02 11.5M20.49 15C19.27 18.2 16.04 20.5 12.34 20.5C7.27 20.5 3.11 17.08 1.98 12.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            Refresh Data
+          </button>
         </div>
       </div>
     </div>

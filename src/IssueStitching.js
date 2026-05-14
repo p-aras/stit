@@ -2360,7 +2360,7 @@ const Wrap = styled.div`
 `;
 
 const HeaderPaper = styled.div`
-  background: rgba(0, 30, 99, 0.7);
+  background: rgba(0, 29, 95, 0.7);
   border-radius: 16px;
   padding: 24px;
   margin-bottom: 24px;

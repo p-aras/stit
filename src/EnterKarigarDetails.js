@@ -10,8 +10,8 @@ const KARIGAR_SPREADSHEET_ID = '17qqixpHOXvG1U3RlRwaHON5JCkugpy4RIu5N9zR9ScM';
 const KARIGAR_SHEET_NAME = 'KarigarProfiles';
 
 // Separate endpoints for fetching and storing data
-const FETCH_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzojcfOjNEbv1UgtGGZA747A7vd_g6T_vSb2WSNIc0T-3IiIknoWvTPXettOYBPE6HRZQ/exec';
-const STORE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzAIkU5fyiJbIFa7NR1ZkYFe0q7D5-sBKSZ225ccKbPBpQo4Wyuw7B7f2Py_09TnqlB/exec';
+const FETCH_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxgyW91VU1maXiZOJ5emRTaMrDR65beE1ocD6SQNzSLXkXo1chkAI2a5YXKlNttAMuG/exec';
+const STORE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbw92YhPlv8kMhPRQWaenw4w_ikUds4JTKS-ELEx9eRjheMsYgltBYFpVxBic1tkK0w/exec';
 
 // Add these constants for Index and Cutting sheets
 const CUTTING_SHEET_ID = "1Hj3JeJEKB43aYYWv8gk2UhdU6BWuEQfCg5pBlTdBMNA";
@@ -44,7 +44,6 @@ function classifyLot(lotInput) {
 function toNumOrNull(v) {
   const t = norm(v);
   if (t === '' || t === null || t === undefined) return null;
-  // Remove commas and convert to number
   const n = parseFloat(t.replace(/,/g, ''));
   return Number.isFinite(n) ? n : null;
 }
@@ -181,7 +180,7 @@ function findLotInIndex(indexData, lotNo) {
   return null;
 }
 
-// Enhanced parseMatrix function to properly extract data from Cutting sheet
+// Enhanced parseMatrix function that properly stops at Total row and groups by shade
 function parseMatrix(rows, lotNo) {
   console.log('========== PARSING CUTTING SHEET MATRIX ==========');
   console.log('Parsing matrix for lot:', lotNo);
@@ -192,15 +191,13 @@ function parseMatrix(rows, lotNo) {
   let fabric = '';
   let garmentType = '';
 
-  // First, extract lot information from the top section
+  // First, extract lot information from the top section (first 10 rows only)
   for (let i = 0; i < Math.min(rows.length, 10); i++) {
     const r = rows[i] || [];
     
-    // Look for "Lot Number:" pattern
     if (r[0] && includes(r[0], 'lot number')) {
       if (r[1]) lotNumber = norm(r[1]);
       
-      // Look for Style in the same row or next columns
       for (let j = 0; j < r.length; j++) {
         if (includes(r[j], 'style') && r[j+1]) {
           style = norm(r[j+1]);
@@ -209,11 +206,9 @@ function parseMatrix(rows, lotNo) {
       }
     }
     
-    // Look for "Fabric:" pattern
     if (r[0] && includes(r[0], 'fabric')) {
       if (r[1]) fabric = norm(r[1]);
       
-      // Look for Garment Type in the same row or next columns
       for (let j = 0; j < r.length; j++) {
         if (includes(r[j], 'garment type') && r[j+1]) {
           garmentType = norm(r[j+1]);
@@ -225,13 +220,12 @@ function parseMatrix(rows, lotNo) {
 
   console.log('Extracted details:', { lotNumber, style, fabric, garmentType });
 
-  // Find the header row (contains "Color", "Cutting Table", "Total Pcs")
+  // Find the header row (contains "Color" and "Total Pcs")
   let headerIdx = -1;
-  for (let i = 0; i < rows.length; i++) {
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
     const r = rows[i] || [];
     const rowText = r.join(' ').toLowerCase();
     
-    // Check if this row contains color and total pcs
     if ((includes(rowText, 'color') || includes(rowText, 'colour')) && 
         (includes(rowText, 'total pcs') || includes(rowText, 'total'))) {
       headerIdx = i;
@@ -276,7 +270,7 @@ function parseMatrix(rows, lotNo) {
     };
   }
 
-  // Parse size columns (between Cutting Table and Total Pcs)
+  // Parse size columns
   const sizeCols = [];
   if (idxCT !== -1 && idxTotal !== -1) {
     for (let i = idxCT + 1; i < idxTotal; i++) {
@@ -288,23 +282,35 @@ function parseMatrix(rows, lotNo) {
   const sizeKeys = sizeCols.map(s => s.key);
   console.log('Size columns found:', sizeKeys);
 
-  // Parse data rows
-  const body = [];
+  // Use a Map to group shades (in case of duplicates)
+  const shadesMap = new Map();
+  
+  // Parse data rows and STOP at the first "Total" row
   for (let r = headerIdx + 1; r < rows.length; r++) {
     const row = rows[r] || [];
+    const firstCell = row[0] ? norm(row[0]) : '';
+    
+    // CRITICAL: STOP when we encounter a "Total" row
+    if (includes(firstCell, 'total')) {
+      console.log(`Stopped parsing at row ${r} - found "Total" row`);
+      break;
+    }
     
     // Skip empty rows
-    if (!row[0] || row[0].trim() === '') continue;
+    if (!firstCell || firstCell === '') continue;
     
-    // Stop if we hit a total row
-    if (includes(row[0], 'total')) break;
+    // Skip rows that look like Index data (numeric IDs like "11646 14486...")
+    if (firstCell.match(/^\d+\s+\d+/) && row.length > 1) {
+      console.log(`Skipping non-shade row: ${firstCell}`);
+      continue;
+    }
 
-    const color = norm(row[idxColor]);
-    if (!color) continue;
+    let colorName = norm(row[idxColor]);
+    if (!colorName || colorName === '') continue;
+    
+    colorName = colorName.replace(/\s+/g, ' ').trim();
 
     const cuttingTable = idxCT !== -1 && row[idxCT] ? toNumOrNull(row[idxCT]) : null;
-
-    // Get total from Total Pcs column (this is what we want!)
     const totalPcs = idxTotal !== -1 && row[idxTotal] ? toNumOrNull(row[idxTotal]) : 0;
 
     // Parse size quantities
@@ -312,26 +318,47 @@ function parseMatrix(rows, lotNo) {
     for (const s of sizeCols) {
       if (row[s.index]) {
         const qty = toNumOrNull(row[s.index]);
-        if (qty !== null) {
-          sizeMap[s.key] = qty;
+        if (qty !== null && qty > 0) {
+          sizeMap[s.key] = (sizeMap[s.key] || 0) + qty;
         }
       }
     }
 
-    body.push({ 
-      color, 
-      cuttingTable, 
-      sizes: sizeMap, 
-      totalPcs: totalPcs || 0  // Use Total Pcs column value
-    });
+    // Group by exact color name
+    if (shadesMap.has(colorName)) {
+      const existing = shadesMap.get(colorName);
+      existing.totalPcs += totalPcs;
+      
+      for (const [size, qty] of Object.entries(sizeMap)) {
+        existing.sizes[size] = (existing.sizes[size] || 0) + qty;
+      }
+      
+      console.log(`Merged duplicate shade: ${colorName} - New total: ${existing.totalPcs}`);
+    } else {
+      shadesMap.set(colorName, {
+        color: colorName,
+        cuttingTable: cuttingTable,
+        sizes: sizeMap,
+        totalPcs: totalPcs || 0
+      });
+    }
 
-    console.log(`Parsed row: ${color} - Total Pcs: ${totalPcs}`);
+    console.log(`Parsed row: "${colorName}" - Total Pcs: ${totalPcs}`);
   }
 
-  // Calculate grand total
+  const body = [];
+  for (const [color, data] of shadesMap) {
+    body.push({
+      color: data.color,
+      cuttingTable: data.cuttingTable,
+      sizes: data.sizes,
+      totalPcs: data.totalPcs
+    });
+  }
+
   const grandTotal = body.reduce((sum, row) => sum + (row.totalPcs || 0), 0);
 
-  console.log('Parsed body rows:', body.length);
+  console.log(`✅ Parsed ${body.length} unique shades`);
   console.log('Grand Total:', grandTotal);
 
   return { 
@@ -346,12 +373,13 @@ function parseMatrix(rows, lotNo) {
   };
 }
 
-// Function to fetch from Cutting using Index info
 async function fetchFromCuttingUsingIndex(lotInfo, signal) {
   const { startRow, numRows, lotNumber } = lotInfo;
 
   const endRow = startRow + numRows - 1;
   const range = encodeURIComponent(`${CUTTING_SHEET_NAME}!A${startRow}:Z${endRow}`);
+
+  console.log(`Fetching Cutting sheet range: ${startRow} to ${endRow} (${numRows} rows expected)`);
 
   try {
     const rows = await fetchSheetDataCached(CUTTING_SHEET_ID, range, signal);
@@ -359,7 +387,9 @@ async function fetchFromCuttingUsingIndex(lotInfo, signal) {
     console.log(`Fetched ${rows.length} rows from Cutting sheet using index`);
 
     const parsed = parseMatrix(rows, lotNumber);
+    
     if (parsed && parsed.rows && parsed.rows.length > 0) {
+      console.log(`Successfully parsed ${parsed.rows.length} shades`);
       return parsed;
     }
 
@@ -382,7 +412,6 @@ async function fetchLotMatrix(lotNo, signal) {
   const { searchKey } = classifyLot(lotNo);
 
   try {
-    // First, try to find in Index sheet
     const indexData = await fetchIndexSheet(signal);
     const lotInfo = findLotInIndex(indexData, searchKey);
     
@@ -390,7 +419,6 @@ async function fetchLotMatrix(lotNo, signal) {
       console.log('✅ Found lot in Index sheet:', lotInfo);
       const result = await fetchFromCuttingUsingIndex(lotInfo, signal);
       result.source = 'cutting';
-      // Add the additional info from Index sheet
       result.partyName = lotInfo.partyName || '';
       result.brand = lotInfo.brand || '';
       result.season = lotInfo.season || '';
@@ -409,51 +437,121 @@ export default function KarigarAssignment() {
   const [selectedLot, setSelectedLot] = useState('');
   const [shades, setShades] = useState([]);
   const [shadePcs, setShadePcs] = useState({});
-  const [karigars, setKarigars] = useState({});
+  
+  // NEW: Support multiple karigars per shade
+  const [shadeAssignments, setShadeAssignments] = useState({}); // { shadeName: [{id, karigarId, karigarName, assignedPcs}] }
+  const [nextAssignmentId, setNextAssignmentId] = useState(1);
+  
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' });
   const [previewRows, setPreviewRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [lockedShades, setLockedShades] = useState(new Set());
+  const [existingAssignments, setExistingAssignments] = useState({});
   
-  // New state for sheet data
   const [sheetData, setSheetData] = useState([]);
   const [loadingSheetData, setLoadingSheetData] = useState(false);
   const [sheetColumns, setSheetColumns] = useState([]);
   const [filteredSheetData, setFilteredSheetData] = useState([]);
   const [sheetError, setSheetError] = useState('');
 
-  // New state for lot matrix from Cutting sheet
   const [lotMatrix, setLotMatrix] = useState(null);
 
-  // New state for supervisors
   const [supervisors, setSupervisors] = useState([]);
   const [loadingSupervisors, setLoadingSupervisors] = useState(false);
   const [showSupervisorDropdown, setShowSupervisorDropdown] = useState(false);
   const [selectedSupervisor, setSelectedSupervisor] = useState('');
 
-  // New state for details sidebar
   const [showDetailsSidebar, setShowDetailsSidebar] = useState(false);
   const [selectedSupervisorDetails, setSelectedSupervisorDetails] = useState(null);
   const [karigarDetails, setKarigarDetails] = useState([]);
   const [loadingKarigarDetails, setLoadingKarigarDetails] = useState(false);
   
-  // New state for karigar search in sidebar
   const [karigarSearchTerm, setKarigarSearchTerm] = useState('');
   const [filteredKarigars, setFilteredKarigars] = useState([]);
   
-  // Track which shade is currently being assigned
   const [activeShadeForAssignment, setActiveShadeForAssignment] = useState(null);
   
-  // Enhanced assignment mode
   const [quickAssignMode, setQuickAssignMode] = useState(false);
   const [selectedShadeForQuickAssign, setSelectedShadeForQuickAssign] = useState(null);
   const [assignmentHistory, setAssignmentHistory] = useState([]);
   const [showAssignmentHistory, setShowAssignmentHistory] = useState(false);
   
-  // New state to store karigar names along with IDs
   const [karigarNames, setKarigarNames] = useState({});
+  
+  // NEW: State for tracking partial assignment
+  const [assigningQuantity, setAssigningQuantity] = useState({});
+  const [showQuantityModal, setShowQuantityModal] = useState(false);
+  const [pendingAssignment, setPendingAssignment] = useState({ shade: null, karigarId: null, karigarName: null });
+
+  // Helper functions for multiple karigars per shade
+  const getShadeAssignments = (shade) => {
+    return shadeAssignments[shade] || [];
+  };
+
+  const getTotalAssignedPcsForShade = (shade) => {
+    const assignments = shadeAssignments[shade] || [];
+    return assignments.reduce((sum, assign) => sum + (assign.assignedPcs || 0), 0);
+  };
+
+  const getRemainingPcsForShade = (shade) => {
+    const total = shadePcs[shade] || 0;
+    const assigned = getTotalAssignedPcsForShade(shade);
+    return total - assigned;
+  };
+
+  const isShadeFullyAssigned = (shade) => {
+    return getRemainingPcsForShade(shade) <= 0;
+  };
+
+  const isShadePartiallyAssigned = (shade) => {
+    const total = shadePcs[shade] || 0;
+    const assigned = getTotalAssignedPcsForShade(shade);
+    return assigned > 0 && assigned < total;
+  };
+
+  const addAssignmentToShade = (shade, karigarId, karigarName, assignedPcs) => {
+    const newAssignment = {
+      id: nextAssignmentId,
+      karigarId: karigarId,
+      karigarName: karigarName,
+      assignedPcs: assignedPcs,
+      timestamp: new Date().toISOString()
+    };
+    
+    setShadeAssignments(prev => ({
+      ...prev,
+      [shade]: [...(prev[shade] || []), newAssignment]
+    }));
+    
+    setNextAssignmentId(prev => prev + 1);
+    
+    // Store karigar name mapping
+    setKarigarNames(prev => ({
+      ...prev,
+      [karigarId]: karigarName
+    }));
+    
+    return newAssignment.id;
+  };
+
+  const removeAssignmentFromShade = (shade, assignmentId) => {
+    setShadeAssignments(prev => ({
+      ...prev,
+      [shade]: (prev[shade] || []).filter(assign => assign.id !== assignmentId)
+    }));
+  };
+
+  const updateAssignmentQuantity = (shade, assignmentId, newPcs) => {
+    setShadeAssignments(prev => ({
+      ...prev,
+      [shade]: (prev[shade] || []).map(assign => 
+        assign.id === assignmentId ? { ...assign, assignedPcs: newPcs } : assign
+      )
+    }));
+  };
 
   // Cache cleanup on component mount
   useEffect(() => {
@@ -471,7 +569,6 @@ export default function KarigarAssignment() {
       setSearchHistory(JSON.parse(saved).slice(0, 5));
     }
     
-    // Load assignment history
     const savedHistory = localStorage.getItem('assignmentHistory');
     if (savedHistory) {
       setAssignmentHistory(JSON.parse(savedHistory).slice(0, 20));
@@ -499,14 +596,15 @@ export default function KarigarAssignment() {
     localStorage.setItem('lotSearchHistory', JSON.stringify(updated));
   };
 
-  // Clear search history
-  const clearHistory = () => {
-    setSearchHistory([]);
-    localStorage.removeItem('lotSearchHistory');
-  };
+  // Add this function near the other history-related functions (around line 400-420):
 
+// Clear search history
+const clearHistory = () => {
+  setSearchHistory([]);
+  localStorage.removeItem('lotSearchHistory');
+};
   // Save assignment to history
-  const addToAssignmentHistory = (shade, karigarId, karigarName) => {
+  const addToAssignmentHistory = (shade, karigarId, karigarName, pcs) => {
     const assignment = {
       id: Date.now(),
       timestamp: new Date().toISOString(),
@@ -514,7 +612,7 @@ export default function KarigarAssignment() {
       shade,
       karigarId,
       karigarName,
-      pcs: shadePcs[shade] || 0
+      pcs: pcs
     };
     
     const updated = [assignment, ...assignmentHistory].slice(0, 20);
@@ -522,7 +620,6 @@ export default function KarigarAssignment() {
     localStorage.setItem('assignmentHistory', JSON.stringify(updated));
   };
 
-  // Clear assignment history
   const clearAssignmentHistory = () => {
     setAssignmentHistory([]);
     localStorage.removeItem('assignmentHistory');
@@ -681,7 +778,6 @@ export default function KarigarAssignment() {
         setKarigarDetails(details);
         setFilteredKarigars(details);
         
-        // Create a mapping of karigar IDs to names for display
         const nameMap = {};
         details.forEach(k => {
           nameMap[k.karigarId] = k.karigarName;
@@ -744,43 +840,25 @@ export default function KarigarAssignment() {
     setActiveShadeForAssignment(null);
     setQuickAssignMode(false);
     setSelectedShadeForQuickAssign(null);
+    setShowQuantityModal(false);
+    setPendingAssignment({ shade: null, karigarId: null, karigarName: null });
   };
 
-  // Handle karigar selection for a specific shade
-  const handleKarigarSelect = (shade, karigarId, karigarName) => {
-    // Update the assignment for this specific shade
-    setKarigars(prev => ({
-      ...prev,
-      [shade]: karigarId
-    }));
-    
-    // Store the karigar name for display
-    setKarigarNames(prev => ({
-      ...prev,
-      [karigarId]: karigarName
-    }));
-    
-    // Add to history
-    addToAssignmentHistory(shade, karigarId, karigarName);
-    
-    const displayName = `${karigarId} (${karigarName})`;
-    const pcs = shadePcs[shade] || 0;
-    
-    setStatus({
-      type: 'success',
-      message: `✅ Assigned ${displayName} to shade "${shade}" (${pcs} pcs)`
-    });
-    
-    // Clear active shade after assignment
-    setActiveShadeForAssignment(null);
-  };
-
-  // Handle shade click to set active shade for assignment
+  // Handle shade click to start assignment process
   const handleShadeClick = (shade) => {
     if (!selectedSupervisor) {
       setStatus({
         type: 'warning',
         message: '⚠️ Please select a supervisor first'
+      });
+      return;
+    }
+    
+    const remainingPcs = getRemainingPcsForShade(shade);
+    if (remainingPcs <= 0) {
+      setStatus({ 
+        type: 'warning', 
+        message: `⚠️ Shade "${shade}" is already fully assigned (${shadePcs[shade]} / ${shadePcs[shade]} pcs assigned)` 
       });
       return;
     }
@@ -791,7 +869,6 @@ export default function KarigarAssignment() {
     if (!showDetailsSidebar) {
       handleViewDetails();
     } else {
-      // Scroll to top of sidebar and highlight search
       const searchInput = document.querySelector('.karigar-search-input');
       if (searchInput) {
         searchInput.focus();
@@ -799,18 +876,79 @@ export default function KarigarAssignment() {
       
       setStatus({
         type: 'info',
-        message: `🎯 Now assigning for shade: "${shade}" (${shadePcs[shade] || 0} pcs). Select a karigar from the list.`
+        message: `🎯 Assigning for shade: "${shade}" (${remainingPcs} pcs remaining out of ${shadePcs[shade]} total). Select a karigar and enter quantity.`
       });
     }
   };
 
-  // Handle quick assign from sidebar (click on assign button)
+  // Open quantity modal for assignment
+  const openQuantityModal = (shade, karigarId, karigarName) => {
+    const maxPcs = getRemainingPcsForShade(shade);
+    if (maxPcs <= 0) {
+      setStatus({
+        type: 'warning',
+        message: `⚠️ No remaining pieces to assign for shade "${shade}"`
+      });
+      return;
+    }
+    
+    setPendingAssignment({ shade, karigarId, karigarName });
+    setAssigningQuantity({ [shade]: maxPcs });
+    setShowQuantityModal(true);
+  };
+
+  // Handle quantity confirmation and assignment
+  const confirmAssignment = () => {
+    const { shade, karigarId, karigarName } = pendingAssignment;
+    if (!shade) return;
+    
+    const quantity = assigningQuantity[shade];
+    if (!quantity || quantity <= 0) {
+      setStatus({
+        type: 'warning',
+        message: '⚠️ Please enter a valid quantity'
+      });
+      return;
+    }
+    
+    const remainingPcs = getRemainingPcsForShade(shade);
+    if (quantity > remainingPcs) {
+      setStatus({
+        type: 'warning',
+        message: `⚠️ Cannot assign more than remaining pieces (${remainingPcs} left)`
+      });
+      return;
+    }
+    
+    // Add the assignment
+    addAssignmentToShade(shade, karigarId, karigarName, quantity);
+    addToAssignmentHistory(shade, karigarId, karigarName, quantity);
+    
+    setStatus({
+      type: 'success',
+      message: `✅ Assigned ${quantity} pcs to ${karigarId} (${karigarName}) for shade "${shade}"`
+    });
+    
+    // Close modal and clear active shade
+    setShowQuantityModal(false);
+    setPendingAssignment({ shade: null, karigarId: null, karigarName: null });
+    
+    // Check if shade is now fully assigned
+    if (getRemainingPcsForShade(shade) <= 0) {
+      setStatus({
+        type: 'success',
+        message: `✅ Shade "${shade}" is now fully assigned! Total: ${shadePcs[shade]} pcs`
+      });
+      setActiveShadeForAssignment(null);
+    }
+  };
+
+  // Handle quick assign from sidebar
   const handleQuickAssign = (karigarId, karigarName) => {
     if (activeShadeForAssignment) {
-      handleKarigarSelect(activeShadeForAssignment, karigarId, karigarName);
+      openQuantityModal(activeShadeForAssignment, karigarId, karigarName);
     } else if (shades.length === 1) {
-      // If only one shade, auto-assign to that shade
-      handleKarigarSelect(shades[0], karigarId, karigarName);
+      openQuantityModal(shades[0], karigarId, karigarName);
     } else {
       setStatus({
         type: 'warning',
@@ -819,52 +957,39 @@ export default function KarigarAssignment() {
     }
   };
 
-  // Handle batch assign - assign same karigar to all unassigned shades
-  const handleBatchAssign = (karigarId, karigarName) => {
-    const unassignedShades = shades.filter(shade => !karigars[shade] || karigars[shade].trim() === '');
-    
-    if (unassignedShades.length === 0) {
+  // Handle remove assignment
+  const handleRemoveAssignment = (shade, assignmentId) => {
+    const assignment = getShadeAssignments(shade).find(a => a.id === assignmentId);
+    if (assignment) {
+      removeAssignmentFromShade(shade, assignmentId);
       setStatus({
-        type: 'warning',
-        message: '⚠️ All shades already have assigned karigars'
+        type: 'info',
+        message: `🗑️ Removed assignment of ${assignment.assignedPcs} pcs from ${assignment.karigarId} for shade "${shade}"`
       });
-      return;
     }
-    
-    const newAssignments = { ...karigars };
-    unassignedShades.forEach(shade => {
-      newAssignments[shade] = karigarId;
-      addToAssignmentHistory(shade, karigarId, karigarName);
-    });
-    
-    setKarigars(newAssignments);
-    
-    // Store karigar name
-    setKarigarNames(prev => ({
-      ...prev,
-      [karigarId]: karigarName
-    }));
-    
-    setStatus({
-      type: 'success',
-      message: `✅ Batch assigned ${karigarId} (${karigarName}) to ${unassignedShades.length} unassigned shades`
-    });
   };
 
-  // Handle removing assignment for a shade
-  const handleRemoveAssignment = (shade) => {
-    setKarigars(prev => ({
-      ...prev,
-      [shade]: ''
-    }));
-    
-    setStatus({
-      type: 'info',
-      message: `🗑️ Removed assignment for shade "${shade}"`
-    });
+  // Handle edit assignment quantity
+  const handleEditQuantity = (shade, assignmentId, currentPcs) => {
+    const newPcs = prompt(`Enter new quantity for this assignment (max ${getRemainingPcsForShade(shade) + currentPcs}):`, currentPcs);
+    if (newPcs && !isNaN(newPcs)) {
+      const newQuantity = parseInt(newPcs);
+      const maxAllowed = getRemainingPcsForShade(shade) + currentPcs;
+      if (newQuantity > maxAllowed) {
+        setStatus({
+          type: 'warning',
+          message: `⚠️ Cannot exceed total shade quantity (${shadePcs[shade]} pcs)`
+        });
+      } else if (newQuantity > 0) {
+        updateAssignmentQuantity(shade, assignmentId, newQuantity);
+        setStatus({
+          type: 'success',
+          message: `✅ Updated quantity to ${newQuantity} pcs`
+        });
+      }
+    }
   };
 
-  // Function to fetch lot data from Index and Cutting sheets (PRIORITY)
   const fetchLotFromCuttingSheet = async (lotNumber) => {
     setLoadingSheetData(true);
     setSheetError('');
@@ -874,34 +999,29 @@ export default function KarigarAssignment() {
       console.log('Matrix received from Cutting sheet:', matrix);
       setLotMatrix(matrix);
       
-      // Convert matrix data to shades and pcs
       if (matrix && matrix.rows && matrix.rows.length > 0) {
         const shadesList = [];
         const pcsMap = {};
         
         matrix.rows.forEach(row => {
           if (row.color) {
-            // Handle potential color names with parentheses
-            let colorName = row.color;
-            // We'll keep the full color name as is
+            let colorName = row.color.trim();
             shadesList.push(colorName);
             pcsMap[colorName] = row.totalPcs || 0;
           }
         });
         
-        console.log('Setting shades from Cutting sheet:', shadesList);
-        console.log('Setting pcs map from Cutting sheet:', pcsMap);
-        console.log('Total pieces from Cutting sheet:', matrix.totals?.grand || 0);
-        
+        console.log('Setting shades:', shadesList);
         setShades(shadesList);
         setShadePcs(pcsMap);
         
-        // Initialize karigar assignments
-        const init = {};
-        shadesList.forEach(s => (init[s] = ''));
-        setKarigars(init);
+        // Initialize empty assignments for each shade
+        const initialAssignments = {};
+        shadesList.forEach(s => {
+          initialAssignments[s] = [];
+        });
+        setShadeAssignments(initialAssignments);
         
-        // Create filteredSheetData for lot summary using data from Index sheet
         const lotData = [{
           'Lot Number': matrix.lotNumber,
           'Brand': matrix.brand || '',
@@ -918,7 +1038,7 @@ export default function KarigarAssignment() {
         
         setStatus({ 
           type: 'success', 
-          message: `✅ Found lot ${lotNumber} from Cutting sheet with ${shadesList.length} shades (Total: ${totalPcs} pcs)` 
+          message: `✅ Found lot ${lotNumber} with ${shadesList.length} shades (Total: ${totalPcs} pcs)` 
         });
       } else {
         throw new Error('No data found in matrix');
@@ -928,32 +1048,26 @@ export default function KarigarAssignment() {
       setSheetError(error.message);
       setStatus({ 
         type: 'error', 
-        message: `❌ Failed to fetch lot from Cutting sheet: ${error.message}` 
+        message: `❌ Failed to fetch lot: ${error.message}` 
       });
     } finally {
       setLoadingSheetData(false);
     }
   };
 
-  // fetchSheetData now PRIORITIZES Cutting sheet first
   const fetchSheetData = async (lotNumber) => {
     setLoadingSheetData(true);
     setSheetError('');
     
     try {
-      // FIRST TRY: Cutting sheet (primary source)
-      console.log('🔍 First trying Cutting sheet for lot:', lotNumber);
       await fetchLotFromCuttingSheet(lotNumber);
-      
     } catch (cuttingError) {
-      console.log('⚠️ Lot not found in Cutting sheet, trying JObOrder as fallback...', cuttingError);
+      console.log('⚠️ Lot not found in Cutting sheet:', cuttingError);
       
-      // SECOND TRY: JObOrder sheet (fallback)
       try {
         const sheetNameEncoded = encodeURIComponent(SHEET_NAME);
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetNameEncoded}?key=${API_KEY}`;
         
-        console.log('Fetching from JObOrder sheet (fallback):', url);
         const response = await fetch(url);
         
         if (!response.ok) {
@@ -993,11 +1107,9 @@ export default function KarigarAssignment() {
             );
           });
           
-          console.log('Filtered rows from JObOrder for lot', lotNumber, ':', filtered);
           setFilteredSheetData(filtered);
           
           if (filtered.length > 0) {
-            // Parse shades from JObOrder data
             const shadesList = [];
             const pcsMap = {};
             
@@ -1006,7 +1118,6 @@ export default function KarigarAssignment() {
               const qty = parseInt(row['Quantity'] || row['Qty'] || row['Pcs'] || '0') || 0;
               
               if (shade && qty > 0) {
-                // Handle multiple shades in one cell (comma-separated)
                 if (shade.includes(',')) {
                   const shadeParts = shade.split(',').map(s => s.trim());
                   const pcsPerShade = Math.floor(qty / shadeParts.length);
@@ -1034,31 +1145,33 @@ export default function KarigarAssignment() {
               setShades(shadesList);
               setShadePcs(pcsMap);
               
-              const init = {};
-              shadesList.forEach(s => (init[s] = ''));
-              setKarigars(init);
+              const initialAssignments = {};
+              shadesList.forEach(s => {
+                initialAssignments[s] = [];
+              });
+              setShadeAssignments(initialAssignments);
               
               const totalPcs = Object.values(pcsMap).reduce((sum, pcs) => sum + pcs, 0);
               
               setStatus({ 
                 type: 'success', 
-                message: `✅ Found lot ${lotNumber} in JObOrder (fallback) with ${shadesList.length} shades (Total: ${totalPcs} pcs)` 
+                message: `✅ Found lot ${lotNumber} with ${shadesList.length} shades (Total: ${totalPcs} pcs)` 
               });
             } else {
-              throw new Error('No shades found in JObOrder data');
+              throw new Error('No shades found');
             }
           } else {
-            throw new Error('Lot not found in JObOrder sheet');
+            throw new Error('Lot not found');
           }
         } else {
-          throw new Error('No data in JObOrder sheet');
+          throw new Error('No data in sheet');
         }
       } catch (jobOrderError) {
-        console.error('Error in JObOrder fetch:', jobOrderError);
+        console.error('Error:', jobOrderError);
         setSheetError(jobOrderError.message);
         setStatus({ 
           type: 'error', 
-          message: `❌ Failed to fetch lot data from both Cutting and JObOrder sheets: ${jobOrderError.message}` 
+          message: `❌ Failed to fetch lot: ${jobOrderError.message}` 
         });
       }
     } finally {
@@ -1066,7 +1179,6 @@ export default function KarigarAssignment() {
     }
   };
 
-  // Handle lot search/submit
   const handleLotSearch = async (lotToSearch = lotSearch) => {
     if (!lotToSearch.trim()) {
       setStatus({ type: 'warning', message: '⚠️ Please enter a lot number' });
@@ -1076,7 +1188,7 @@ export default function KarigarAssignment() {
     setSelectedLot(lotToSearch);
     setShades([]);
     setShadePcs({});
-    setKarigars({});
+    setShadeAssignments({});
     setPreviewRows([]);
     setFilteredSheetData([]);
     setLotMatrix(null);
@@ -1088,19 +1200,49 @@ export default function KarigarAssignment() {
       await fetchSheetData(lotToSearch);
       addToHistory(lotToSearch);
       
-      // Fetch existing assignments
-      const r2 = await fetch(`${FETCH_ENDPOINT}?action=getKarigarAssignments&lot=${encodeURIComponent(lotToSearch)}`);
-      const j2 = await r2.json();
+      // Fetch existing assignments from database
+      const assignmentsRes = await fetch(`${FETCH_ENDPOINT}?action=getKarigarAssignments&lot=${encodeURIComponent(lotToSearch)}`);
+      const assignmentsData = await assignmentsRes.json();
       
-      if (j2?.success && Array.isArray(j2.rows)) {
-        setPreviewRows(j2.rows);
-        const existingAssignments = {};
-        j2.rows.forEach(row => {
-          if (row.karigar) {
-            existingAssignments[row.shade] = row.karigar;
+      if (assignmentsData?.success && Array.isArray(assignmentsData.rows)) {
+        setPreviewRows(assignmentsData.rows);
+        
+        // Load existing assignments into the new structure
+        const loadedAssignments = {};
+        shades.forEach(shade => {
+          loadedAssignments[shade] = [];
+        });
+        
+        assignmentsData.rows.forEach(row => {
+          if (row.karigar && row.karigar.toString().trim() !== '') {
+            loadedAssignments[row.shade].push({
+              id: row.id || Date.now(),
+              karigarId: row.karigar,
+              karigarName: row.karigarName || row.karigar,
+              assignedPcs: parseInt(row.pcs) || 0,
+              timestamp: row.timestamp
+            });
           }
         });
-        setKarigars(prev => ({ ...prev, ...existingAssignments }));
+        
+        setShadeAssignments(loadedAssignments);
+        
+        // Mark shades with existing assignments as LOCKED for editing existing assignments
+        const lockedSet = new Set();
+        assignmentsData.rows.forEach(row => {
+          if (row.karigar && row.karigar.toString().trim() !== '') {
+            lockedSet.add(row.shade);
+          }
+        });
+        setLockedShades(lockedSet);
+        
+        const lockedCount = lockedSet.size;
+        if (lockedCount > 0) {
+          setStatus({ 
+            type: 'info', 
+            message: `🔒 ${lockedCount} shade(s) have existing assignments. You can add more karigars to these shades.` 
+          });
+        }
       }
       
     } catch (e) {
@@ -1122,97 +1264,99 @@ export default function KarigarAssignment() {
     return selectedLot && shades.length > 0;
   }, [selectedLot, shades]);
 
-  const handleInput = (shade, val) => {
-    setKarigars(prev => ({ ...prev, [shade]: val }));
-  };
+  // Save function that supports multiple karigars per shade
+// Replace your existing handleSave function with this updated version
+// Update your handleSave function to use URLSearchParams (working approach)
+const handleSave = async () => {
+  setSaving(true);
+  setStatus({ type: '', message: '' });
+  
+  try {
+    const lotDetails = filteredSheetData.length > 0 ? filteredSheetData[0] : {};
+    
+    // Build assignments object with multiple karigars per shade
+    const assignmentsWithPcs = {};
+    
+    Object.entries(shadeAssignments).forEach(([shade, assignments]) => {
+      if (assignments && assignments.length > 0) {
+        // Send as array of objects
+        assignmentsWithPcs[shade] = assignments.map(assign => ({
+          karigarId: assign.karigarId,
+          pcs: assign.assignedPcs
+        }));
+      }
+    });
+    
+    const completePayload = { 
+      lot: selectedLot,
+      brand: lotMatrix?.brand || lotDetails['Brand'] || '',
+      fabric: lotMatrix?.fabric || lotDetails['Fabric'] || '',
+      style: lotMatrix?.style || lotDetails['Style'] || '',
+      garmentType: lotMatrix?.garmentType || lotDetails['Garment Type'] || '',
+      partyName: lotMatrix?.partyName || lotDetails['Party Name'] || '',
+      season: lotMatrix?.season || lotDetails['Season'] || '',
+      karigars: assignmentsWithPcs,
+      savedBy: 'Current User',
+      supervisor: selectedSupervisor || 'Not Assigned'
+    };
+    
+    console.log('Saving multi-karigar assignments:', completePayload);
+    
+    // Use URLSearchParams (this was working before)
+    const formData = new URLSearchParams();
+    formData.append('action', 'saveKarigarAssignments');
+    formData.append('lot', selectedLot);
+    formData.append('brand', completePayload.brand);
+    formData.append('fabric', completePayload.fabric);
+    formData.append('style', completePayload.style);
+    formData.append('garmentType', completePayload.garmentType);
+    formData.append('partyName', completePayload.partyName);
+    formData.append('season', completePayload.season);
+    formData.append('karigars', JSON.stringify(assignmentsWithPcs));
+    formData.append('savedBy', 'Current User');
+    formData.append('supervisor', selectedSupervisor || 'Not Assigned');
 
-  const handleSave = async () => {
-    setSaving(true);
-    setStatus({ type: '', message: '' });
+    const res = await fetch(STORE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+      body: formData.toString(),
+    });
+
+    const responseText = await res.text();
+    console.log('Raw response:', responseText);
+    
+    let json;
     try {
-      const lotDetails = filteredSheetData.length > 0 ? filteredSheetData[0] : {};
-      
-      // Create assignments with pcs for each shade
-      const assignmentsWithPcs = {};
-      Object.entries(karigars).forEach(([shade, karigar]) => {
-        if (karigar && karigar.toString().trim() !== '') {
-          assignmentsWithPcs[shade] = {
-            karigarId: karigar,
-            pcs: shadePcs[shade] || 0
-          };
-        }
-      });
-      
-      // Create the complete payload
-      const completePayload = { 
-        lot: selectedLot,
-        brand: lotMatrix?.brand || lotDetails['Brand'] || lotDetails['BRAND'] || '',
-        fabric: lotMatrix?.fabric || lotDetails['Fabric'] || lotDetails['FABRIC'] || '',
-        style: lotMatrix?.style || lotDetails['Style'] || lotDetails['STYLE'] || '',
-        garmentType: lotMatrix?.garmentType || lotDetails['Garment Type'] || lotDetails['GarmentType'] || lotDetails['GARMENT TYPE'] || '',
-        partyName: lotMatrix?.partyName || lotDetails['Party Name'] || lotDetails['PARTY NAME'] || '',
-        season: lotMatrix?.season || lotDetails['Season'] || lotDetails['SEASON'] || '',
-        karigars: assignmentsWithPcs,
-        savedBy: 'Current User',
-        supervisor: selectedSupervisor || 'Not Assigned'
-      };
-      
-      console.log('Complete payload:', completePayload);
-      
-      // Create URL-encoded form data with ALL fields at top level
-      const formData = new URLSearchParams();
-      formData.append('action', 'saveKarigarAssignments');
-      formData.append('lot', selectedLot);
-      formData.append('brand', completePayload.brand);
-      formData.append('fabric', completePayload.fabric);
-      formData.append('style', completePayload.style);
-      formData.append('garmentType', completePayload.garmentType);
-      formData.append('partyName', completePayload.partyName);
-      formData.append('season', completePayload.season);
-      formData.append('karigars', JSON.stringify(assignmentsWithPcs));
-      formData.append('savedBy', 'Current User');
-      formData.append('supervisor', selectedSupervisor || 'Not Assigned');
-      
-      console.log('Form data being sent:', formData.toString());
-
-      const res = await fetch(STORE_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
-        body: formData.toString(),
-      });
-
-      const responseText = await res.text();
-      console.log('Raw response:', responseText);
-      
-      let json;
-      try {
-        json = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Failed to parse response:', parseError);
-        setStatus({ type: 'error', message: '❌ Invalid response from server' });
-        return;
-      }
-      
-      if (json?.success) {
-        setStatus({ 
-          type: 'success', 
-          message: `✅ Successfully saved ${json.savedRows} assignments with piece counts. Supervisor: ${selectedSupervisor || 'Not assigned'}` 
-        });
-        
-        // Refresh preview
-        const r2 = await fetch(`${FETCH_ENDPOINT}?action=getKarigarAssignments&lot=${encodeURIComponent(selectedLot)}`);
-        const j2 = await r2.json();
-        if (j2?.success && Array.isArray(j2.rows)) setPreviewRows(j2.rows);
-      } else {
-        setStatus({ type: 'error', message: `❌ Failed to save: ${json?.error || 'Unknown error'}` });
-      }
-    } catch (e) {
-      console.error('Save error:', e);
-      setStatus({ type: 'error', message: `❌ Network error: ${e.message}` });
-    } finally {
-      setSaving(false);
+      json = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('Failed to parse response:', parseError);
+      setStatus({ type: 'error', message: '❌ Invalid response from server' });
+      return;
     }
-  };
+    
+    if (json?.success) {
+      const totalAssignments = Object.values(assignmentsWithPcs).reduce((sum, assigns) => sum + assigns.length, 0);
+      setStatus({ 
+        type: 'success', 
+        message: `✅ Successfully saved ${totalAssignments} assignment(s) for lot ${selectedLot}` 
+      });
+      
+      // Refresh preview
+      const refreshRes = await fetch(`${FETCH_ENDPOINT}?action=getKarigarAssignments&lot=${encodeURIComponent(selectedLot)}`);
+      const refreshData = await refreshRes.json();
+      if (refreshData?.success && Array.isArray(refreshData.rows)) {
+        setPreviewRows(refreshData.rows);
+      }
+    } else {
+      setStatus({ type: 'error', message: `❌ Failed to save: ${json?.error || 'Unknown error'}` });
+    }
+  } catch (e) {
+    console.error('Save error:', e);
+    setStatus({ type: 'error', message: `❌ Network error: ${e.message}` });
+  } finally {
+    setSaving(false);
+  }
+};
 
   const getStatusStyles = () => {
     switch (status.type) {
@@ -1258,68 +1402,70 @@ export default function KarigarAssignment() {
     if (filteredSheetData.length === 0 && !lotMatrix) return null;
     
     const firstRow = filteredSheetData[0] || {};
-    
-    // Calculate total pcs from shadePcs
     const totalPcs = Object.values(shadePcs).reduce((sum, pcs) => sum + pcs, 0);
     
-    // If we have preview rows with pcs, we could also calculate from there
-    const previewTotalPcs = previewRows.reduce((sum, row) => sum + (parseInt(row.pcs) || 0), 0);
-    
     return {
-      brand: lotMatrix?.brand || firstRow['Brand'] || firstRow['BRAND'] || 'N/A',
-      fabric: lotMatrix?.fabric || firstRow['Fabric'] || firstRow['FABRIC'] || 'N/A',
-      style: lotMatrix?.style || firstRow['Style'] || firstRow['STYLE'] || 'N/A',
-      garmentType: lotMatrix?.garmentType || firstRow['Garment Type'] || firstRow['GarmentType'] || firstRow['GARMENT TYPE'] || 'N/A',
-      partyName: lotMatrix?.partyName || firstRow['Party Name'] || firstRow['PARTY NAME'] || 'N/A',
-      season: lotMatrix?.season || firstRow['Season'] || firstRow['SEASON'] || 'N/A',
-      date: firstRow['Date'] || firstRow['DATE'] || 'N/A',
-      totalPcs: totalPcs || previewTotalPcs || 0
+      brand: lotMatrix?.brand || firstRow['Brand'] || 'N/A',
+      fabric: lotMatrix?.fabric || firstRow['Fabric'] || 'N/A',
+      style: lotMatrix?.style || firstRow['Style'] || 'N/A',
+      garmentType: lotMatrix?.garmentType || firstRow['Garment Type'] || 'N/A',
+      partyName: lotMatrix?.partyName || firstRow['Party Name'] || 'N/A',
+      season: lotMatrix?.season || firstRow['Season'] || 'N/A',
+      date: firstRow['Date'] || 'N/A',
+      totalPcs: totalPcs || 0
     };
-  }, [filteredSheetData, lotMatrix, shadePcs, previewRows]);
+  }, [filteredSheetData, lotMatrix, shadePcs]);
 
   const lotSummary = getLotSummary();
 
-  // Calculate total assigned pcs
+  // Calculate total assigned pcs across all shades
   const totalAssignedPcs = useMemo(() => {
     let total = 0;
-    Object.entries(karigars).forEach(([shade, karigar]) => {
-      if (karigar && karigar.toString().trim() !== '') {
-        total += shadePcs[shade] || 0;
-      }
+    Object.values(shadeAssignments).forEach(assignments => {
+      assignments.forEach(assign => {
+        total += assign.assignedPcs || 0;
+      });
     });
     return total;
-  }, [karigars, shadePcs]);
+  }, [shadeAssignments]);
 
-  // Get unassigned shades count
-  const unassignedShadesCount = useMemo(() => {
-    return shades.filter(shade => !karigars[shade] || karigars[shade].trim() === '').length;
-  }, [shades, karigars]);
+  // Get total unassigned pieces
+  const totalUnassignedPcs = useMemo(() => {
+    return (lotSummary?.totalPcs || 0) - totalAssignedPcs;
+  }, [lotSummary, totalAssignedPcs]);
+
+  // Count total assignments (number of karigar-shade pairs)
+  const totalAssignmentsCount = useMemo(() => {
+    return Object.values(shadeAssignments).reduce((sum, assigns) => sum + assigns.length, 0);
+  }, [shadeAssignments]);
 
   return (
     <div style={styles.container}>
       {/* Compact Header */}
       <div style={styles.compactHeader}>
         <div style={styles.headerLeft}>
-          <span style={styles.headerIcon}>👔</span>
+          <div style={styles.logoIcon}>🎨</div>
           <div>
-            <h1 style={styles.compactTitle}>Karigar Assignment</h1>
-            <p style={styles.compactSubtitle}>Assign karigars to production lots</p>
+            <h1 style={styles.compactTitle}>
+              <span style={styles.titleHighlight}>Karigar</span> Assignment
+            </h1>
+            <p style={styles.compactSubtitle}>Assign multiple karigars per shade with split quantities</p>
           </div>
         </div>
         <div style={styles.headerRight}>
           <div style={styles.headerStats}>
-            <span style={styles.statPill}>
-              <span style={styles.statPillIcon}>📋</span>
-              {previewRows.length} Assignments
-            </span>
-            <span style={styles.statPill}>
-              <span style={styles.statPillIcon}>🎨</span>
-              {shades.length} Shades
-            </span>
-            <span style={styles.statPill}>
-              <span style={styles.statPillIcon}>📦</span>
-              {totalAssignedPcs} / {lotSummary?.totalPcs || 0} Pcs
-            </span>
+            <div style={styles.statCard}>
+              <span style={styles.statValue}>{totalAssignmentsCount}</span>
+              <span style={styles.statLabel}>Assignments</span>
+            </div>
+            <div style={styles.statCard}>
+              <span style={styles.statValue}>{shades.length}</span>
+              <span style={styles.statLabel}>Shades</span>
+            </div>
+            <div style={styles.statCard}>
+              <span style={styles.statValue}>{totalAssignedPcs} / {lotSummary?.totalPcs || 0}</span>
+              <span style={styles.statLabel}>Pieces</span>
+            </div>
           </div>
           <button
             onClick={() => setShowAssignmentHistory(!showAssignmentHistory)}
@@ -1328,13 +1474,6 @@ export default function KarigarAssignment() {
             <span style={styles.historyButtonIcon}>📜</span>
             History
           </button>
-          <button
-            onClick={() => alert('Rate List feature coming soon!')}
-            style={styles.rateListButton}
-          >
-            <span style={styles.rateListButtonIcon}>💰</span>
-            Create Rate List
-          </button>
         </div>
       </div>
 
@@ -1342,9 +1481,9 @@ export default function KarigarAssignment() {
       {showAssignmentHistory && (
         <div style={styles.historyDropdown}>
           <div style={styles.historyHeader}>
-            <span>📜 Recent Assignments</span>
+            <span>📋 Recent Assignment History</span>
             <div>
-              <button onClick={clearAssignmentHistory} style={styles.clearHistorySmall}>Clear</button>
+              <button onClick={clearAssignmentHistory} style={styles.clearHistorySmall}>Clear All</button>
               <button onClick={() => setShowAssignmentHistory(false)} style={styles.closeDropdownButton}>✕</button>
             </div>
           </div>
@@ -1353,9 +1492,9 @@ export default function KarigarAssignment() {
               assignmentHistory.map(entry => (
                 <div key={entry.id} style={styles.historyItem}>
                   <div style={styles.historyItemLeft}>
-                    <span style={styles.historyItemLot}>Lot: {entry.lot}</span>
-                    <span style={styles.historyItemShade}>Shade: {entry.shade}</span>
-                    <span style={styles.historyItemKarigar}>ID: {entry.karigarId}</span>
+                    <span style={styles.historyItemLot}>Lot {entry.lot}</span>
+                    <span style={styles.historyItemShade}>🎨 {entry.shade}</span>
+                    <span style={styles.historyItemKarigar}>🆔 {entry.karigarId}</span>
                     {entry.karigarName && <span style={styles.historyItemName}>({entry.karigarName})</span>}
                   </div>
                   <div style={styles.historyItemRight}>
@@ -1371,83 +1510,130 @@ export default function KarigarAssignment() {
         </div>
       )}
 
-      {/* Supervisor Button Row */}
-      <div style={styles.supervisorRow}>
-        <button
-          onClick={fetchSupervisors}
-          disabled={loadingSupervisors}
-          style={styles.supervisorButton}
-        >
-          <span style={styles.supervisorButtonIcon}>
-            {loadingSupervisors ? '⏳' : '👥'}
-          </span>
-          {loadingSupervisors ? 'Loading...' : 'Select Supervisor / Thekedar'}
-        </button>
-        
-        {selectedSupervisor && (
-          <>
-            <div style={styles.selectedSupervisorBadge}>
-              <span style={styles.selectedSupervisorIcon}>✓</span>
-              <span style={styles.selectedSupervisorLabel}>Selected:</span>
-              <span style={styles.selectedSupervisorName}>{selectedSupervisor}</span>
+      {/* Supervisor Selection Section */}
+      <div style={styles.supervisorSection}>
+        <div style={styles.supervisorRow}>
+          <button
+            onClick={fetchSupervisors}
+            disabled={loadingSupervisors}
+            style={styles.supervisorButton}
+          >
+            <span style={styles.supervisorButtonIcon}>
+              {loadingSupervisors ? (
+                <div style={styles.spinnerMini}></div>
+              ) : (
+                '👥'
+              )}
+            </span>
+            {loadingSupervisors ? 'Loading Supervisors...' : 'Select Supervisor / Thekedar'}
+          </button>
+          
+          {selectedSupervisor && (
+            <>
+              <div style={styles.selectedSupervisorBadge}>
+                <span style={styles.selectedSupervisorIcon}>✓</span>
+                <span style={styles.selectedSupervisorLabel}>Active Supervisor:</span>
+                <span style={styles.selectedSupervisorName}>{selectedSupervisor}</span>
+                <button
+                  onClick={() => setSelectedSupervisor('')}
+                  style={styles.clearSupervisorButton}
+                >
+                  ✕
+                </button>
+              </div>
+              
               <button
-                onClick={() => setSelectedSupervisor('')}
-                style={styles.clearSupervisorButton}
+                onClick={handleViewDetails}
+                style={styles.detailsButton}
+                disabled={!selectedSupervisor}
+              >
+                <span style={styles.detailsButtonIcon}>👥</span>
+                View Team ({karigarDetails.length})
+              </button>
+
+              {quickAssignMode && (
+                <div style={styles.quickAssignBadge}>
+                  <span style={styles.quickAssignIcon}>⚡</span>
+                  Quick Assign Mode Active
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Supervisor Dropdown */}
+        {showSupervisorDropdown && supervisors.length > 0 && (
+          <div style={styles.supervisorDropdown}>
+            <div style={styles.supervisorDropdownHeader}>
+              <span>👥 Select a Supervisor ({supervisors.length} available)</span>
+              <button
+                onClick={() => setShowSupervisorDropdown(false)}
+                style={styles.closeDropdownButton}
               >
                 ✕
               </button>
             </div>
-            
-            {/* View Details Button */}
-            <button
-              onClick={handleViewDetails}
-              style={styles.detailsButton}
-              disabled={!selectedSupervisor}
-            >
-              <span style={styles.detailsButtonIcon}>📋</span>
-              View Karigar Details
-            </button>
-
-            {/* Quick Assign Status */}
-            {quickAssignMode && (
-              <div style={styles.quickAssignBadge}>
-                <span style={styles.quickAssignIcon}>⚡</span>
-                Quick Assign Mode
-              </div>
-            )}
-          </>
+            <div style={styles.supervisorList}>
+              {supervisors.map((supervisor, index) => (
+                <div
+                  key={index}
+                  style={styles.supervisorItem}
+                  onClick={() => handleSupervisorSelect(supervisor)}
+                >
+                  <div style={styles.supervisorItemLeft}>
+                    <span style={styles.supervisorItemIcon}>👤</span>
+                    <div>
+                      <div style={styles.supervisorItemName}>{supervisor.name}</div>
+                      <div style={styles.supervisorItemType}>{supervisor.type}</div>
+                    </div>
+                  </div>
+                  <span style={styles.supervisorItemSelect}>Select →</span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Supervisor Dropdown */}
-      {showSupervisorDropdown && supervisors.length > 0 && (
-        <div style={styles.supervisorDropdown}>
-          <div style={styles.supervisorDropdownHeader}>
-            <span>👥 Select a Supervisor ({supervisors.length} available)</span>
-            <button
-              onClick={() => setShowSupervisorDropdown(false)}
-              style={styles.closeDropdownButton}
-            >
-              ✕
-            </button>
-          </div>
-          <div style={styles.supervisorList}>
-            {supervisors.map((supervisor, index) => (
-              <div
-                key={index}
-                style={styles.supervisorItem}
-                onClick={() => handleSupervisorSelect(supervisor)}
-              >
-                <div style={styles.supervisorItemLeft}>
-                  <span style={styles.supervisorItemIcon}>👤</span>
-                  <div>
-                    <div style={styles.supervisorItemName}>{supervisor.name}</div>
-                    <div style={styles.supervisorItemType}>{supervisor.type}</div>
-                  </div>
-                </div>
-                <span style={styles.supervisorItemSelect}>Select →</span>
+      {/* Quantity Assignment Modal */}
+      {showQuantityModal && (
+        <div style={styles.modalOverlay} onClick={() => setShowQuantityModal(false)}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>Assign Quantity</h3>
+              <button onClick={() => setShowQuantityModal(false)} style={styles.modalClose}>✕</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={styles.modalText}>
+                Assigning to shade: <strong>{pendingAssignment.shade}</strong>
+              </p>
+              <p style={styles.modalText}>
+                Karigar: <strong>{pendingAssignment.karigarId} ({pendingAssignment.karigarName})</strong>
+              </p>
+              <p style={styles.modalText}>
+                Remaining pieces: <strong>{getRemainingPcsForShade(pendingAssignment.shade)}</strong> out of <strong>{shadePcs[pendingAssignment.shade]}</strong>
+              </p>
+              <div style={styles.modalInputGroup}>
+                <label style={styles.modalLabel}>Quantity to assign:</label>
+                <input
+                  type="number"
+                  value={assigningQuantity[pendingAssignment.shade] || ''}
+                  onChange={(e) => setAssigningQuantity({ [pendingAssignment.shade]: parseInt(e.target.value) || 0 })}
+                  max={getRemainingPcsForShade(pendingAssignment.shade)}
+                  min={1}
+                  style={styles.modalInput}
+                  autoFocus
+                />
               </div>
-            ))}
+            </div>
+            <div style={styles.modalFooter}>
+              <button onClick={() => setShowQuantityModal(false)} style={styles.modalCancelButton}>
+                Cancel
+              </button>
+              <button onClick={confirmAssignment} style={styles.modalConfirmButton}>
+                Confirm Assignment
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1459,7 +1645,7 @@ export default function KarigarAssignment() {
             <div style={styles.sidebarHeader}>
               <h3 style={styles.sidebarTitle}>
                 <span style={styles.sidebarTitleIcon}>👥</span>
-                Karigar Details
+                Team Members
               </h3>
               <div style={styles.sidebarHeaderActions}>
                 {quickAssignMode && (
@@ -1483,13 +1669,11 @@ export default function KarigarAssignment() {
                 <div style={styles.activeAssignmentIndicator}>
                   <span style={styles.activeAssignmentIcon}>🎯</span>
                   <div style={styles.activeAssignmentText}>
-                    <span>Assigning to shade:</span>
+                    <span>Assigning to:</span>
                     <strong>"{activeShadeForAssignment}"</strong>
-                    {shadePcs[activeShadeForAssignment] && 
-                      <span style={styles.activeAssignmentPcs}>
-                        ({shadePcs[activeShadeForAssignment]} pcs)
-                      </span>
-                    }
+                    <span style={styles.activeAssignmentPcs}>
+                      ({getRemainingPcsForShade(activeShadeForAssignment)}/{shadePcs[activeShadeForAssignment]} pcs remaining)
+                    </span>
                   </div>
                   <button 
                     onClick={() => setActiveShadeForAssignment(null)}
@@ -1502,7 +1686,7 @@ export default function KarigarAssignment() {
               ) : (
                 <div style={styles.noActiveAssignment}>
                   <span style={styles.noActiveIcon}>👆</span>
-                  <span>Click on any shade card above to start assigning</span>
+                  <span>Click on any shade card to start assigning</span>
                 </div>
               )}
               
@@ -1511,7 +1695,7 @@ export default function KarigarAssignment() {
                 <span style={styles.karigarSearchIcon}>🔍</span>
                 <input
                   type="text"
-                  placeholder="Search karigar by ID or name..."
+                  placeholder="Search by ID or name..."
                   value={karigarSearchTerm}
                   onChange={(e) => setKarigarSearchTerm(e.target.value)}
                   style={styles.karigarSearchInput}
@@ -1531,56 +1715,30 @@ export default function KarigarAssignment() {
               {loadingKarigarDetails ? (
                 <div style={styles.sidebarLoading}>
                   <div style={styles.loadingSpinnerSmall}></div>
-                  <p>Loading karigar details...</p>
+                  <p>Loading team members...</p>
                 </div>
               ) : (
                 <>
                   <div style={styles.karigarCount}>
                     <span style={styles.karigarCountIcon}>👤</span>
-                    {filteredKarigars.length} Karigar{filteredKarigars.length !== 1 ? 's' : ''} Found
+                    {filteredKarigars.length} Member{filteredKarigars.length !== 1 ? 's' : ''}
                     {karigarSearchTerm && filteredKarigars.length !== karigarDetails.length && (
                       <span style={styles.filteredHint}>(filtered)</span>
                     )}
                   </div>
                   
-                  {/* Batch Assign Button (shown when multiple unassigned shades) */}
-                  {unassignedShadesCount > 1 && activeShadeForAssignment && (
-                    <div style={styles.batchAssignHint}>
-                      <span>💡 Tip: </span>
-                      <span>You can also </span>
-                      <button
-                        onClick={() => {
-                          if (filteredKarigars.length > 0) {
-                            handleBatchAssign(filteredKarigars[0].karigarId, filteredKarigars[0].karigarName);
-                          }
-                        }}
-                        style={styles.batchAssignLink}
-                      >
-                        batch assign
-                      </button>
-                      <span> the same karigar to all {unassignedShadesCount} unassigned shades</span>
-                    </div>
-                  )}
-                  
                   {filteredKarigars.length > 0 ? (
                     <div style={styles.karigarList}>
-                      {/* Table Header */}
-                      <div style={styles.karigarTableHeader}>
-                        <span style={styles.headerSrNo}>Sr. No.</span>
-                        <span style={styles.headerId}>Karigar ID</span>
-                        <span style={styles.headerName}>Karigar Name</span>
-                        <span style={styles.headerAction}>Action</span>
-                      </div>
-                      
                       {filteredKarigars.map((karigar) => (
                         <div 
                           key={karigar.srNo} 
                           style={styles.karigarCard}
                         >
-                          <span style={styles.karigarSrNo}>{karigar.srNo}</span>
-                          <span style={styles.karigarIdValue}>{karigar.karigarId}</span>
-                          <span style={styles.karigarNameValue}>{karigar.karigarName}</span>
-                          <div style={styles.karigarActions}>
+                          <div style={styles.karigarCardHeader}>
+                            <div style={styles.karigarCardInfo}>
+                              <div style={styles.karigarIdBadge}>{karigar.karigarId}</div>
+                              <div style={styles.karigarNameText}>{karigar.karigarName}</div>
+                            </div>
                             <button
                               onClick={() => handleQuickAssign(karigar.karigarId, karigar.karigarName)}
                               style={{
@@ -1590,17 +1748,8 @@ export default function KarigarAssignment() {
                               disabled={!activeShadeForAssignment}
                               title={activeShadeForAssignment ? `Assign to "${activeShadeForAssignment}"` : 'Select a shade first'}
                             >
-                              {activeShadeForAssignment ? 'Assign' : 'Select'}
+                              {activeShadeForAssignment ? 'Assign' : 'Select Shade First'}
                             </button>
-                            {unassignedShadesCount > 1 && (
-                              <button
-                                onClick={() => handleBatchAssign(karigar.karigarId, karigar.karigarName)}
-                                style={styles.batchAssignButton}
-                                title={`Assign to all ${unassignedShadesCount} unassigned shades`}
-                              >
-                                📦
-                              </button>
-                            )}
                           </div>
                         </div>
                       ))}
@@ -1610,8 +1759,8 @@ export default function KarigarAssignment() {
                       <span style={styles.noKarigarsIcon}>📭</span>
                       <p>
                         {karigarSearchTerm 
-                          ? `No karigars found matching "${karigarSearchTerm}"` 
-                          : 'No karigars found for this supervisor'}
+                          ? `No members found matching "${karigarSearchTerm}"` 
+                          : 'No team members found for this supervisor'}
                       </p>
                     </div>
                   )}
@@ -1622,7 +1771,7 @@ export default function KarigarAssignment() {
         </div>
       )}
 
-      {/* Search Bar */}
+      {/* Search Section */}
       <div style={styles.searchSection}>
         <div style={styles.searchBar}>
           <span style={styles.searchIcon}>🔍</span>
@@ -1643,7 +1792,7 @@ export default function KarigarAssignment() {
             disabled={loading}
             style={styles.searchButton}
           >
-            {loading ? 'Searching...' : 'Search'}
+            {loading ? <div style={styles.spinnerSmallLight}></div> : 'Search Lot'}
           </button>
         </div>
 
@@ -1676,15 +1825,21 @@ export default function KarigarAssignment() {
         <div style={styles.twoColumnLayout}>
           {/* Left Column - Lot Info & Summary */}
           <div style={styles.leftColumn}>
-            {/* Active Lot Badge */}
+            {/* Active Lot Card */}
             <div style={styles.activeLotCard}>
-              <span style={styles.activeLotIcon}>🎯</span>
-              <span style={styles.activeLotLabel}>Active Lot:</span>
-              <span style={styles.activeLotNumber}>{selectedLot}</span>
-              {unassignedShadesCount > 0 && (
-                <span style={styles.unassignedBadge}>
-                  {unassignedShadesCount} unassigned
-                </span>
+              <div style={styles.activeLotIcon}>🎯</div>
+              <div style={styles.activeLotContent}>
+                <div style={styles.activeLotLabel}>Active Production Lot</div>
+                <div style={styles.activeLotNumber}>{selectedLot}</div>
+              </div>
+              {totalUnassignedPcs > 0 ? (
+                <div style={styles.unassignedBadge}>
+                  {totalUnassignedPcs} Pcs Unassigned
+                </div>
+              ) : (
+                <div style={styles.fullyAssignedBadge}>
+                  ✓ Fully Assigned
+                </div>
               )}
             </div>
 
@@ -1697,36 +1852,37 @@ export default function KarigarAssignment() {
                 </div>
                 <div style={styles.summaryGrid}>
                   <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Brand:</span>
+                    <span style={styles.summaryLabel}>Brand</span>
                     <span style={styles.summaryValue}>{lotSummary.brand}</span>
                   </div>
                   <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Fabric:</span>
+                    <span style={styles.summaryLabel}>Fabric</span>
                     <span style={styles.summaryValue}>{lotSummary.fabric}</span>
                   </div>
                   <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Style:</span>
+                    <span style={styles.summaryLabel}>Style</span>
                     <span style={styles.summaryValue}>{lotSummary.style}</span>
                   </div>
                   <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Garment:</span>
+                    <span style={styles.summaryLabel}>Garment</span>
                     <span style={styles.summaryValue}>{lotSummary.garmentType}</span>
                   </div>
                   <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Party:</span>
+                    <span style={styles.summaryLabel}>Party</span>
                     <span style={styles.summaryValue}>{lotSummary.partyName}</span>
                   </div>
                   <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Season:</span>
+                    <span style={styles.summaryLabel}>Season</span>
                     <span style={styles.summaryValue}>{lotSummary.season}</span>
                   </div>
                   <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Date:</span>
+                    <span style={styles.summaryLabel}>Date</span>
                     <span style={styles.summaryValue}>{formatDate(lotSummary.date)}</span>
                   </div>
+                  <div style={styles.summaryDivider} />
                   <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Total Pcs:</span>
-                    <span style={{...styles.summaryValue, ...styles.summaryValueTotal}}>{lotSummary.totalPcs}</span>
+                    <span style={styles.summaryLabelTotal}>Total Pieces</span>
+                    <span style={styles.summaryValueTotal}>{lotSummary.totalPcs.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -1737,7 +1893,7 @@ export default function KarigarAssignment() {
               <div style={styles.previewCard}>
                 <div style={styles.previewCardHeader}>
                   <span style={styles.previewIcon}>📋</span>
-                  <h3 style={styles.previewTitle}>Current Assignments</h3>
+                  <h3 style={styles.previewTitle}>Recent Assignments</h3>
                   <span style={styles.previewCount}>{previewRows.length}</span>
                 </div>
                 <div style={styles.previewList}>
@@ -1747,13 +1903,12 @@ export default function KarigarAssignment() {
                         <span style={styles.previewShade}>{r.shade}</span>
                         {r.karigar ? (
                           <span style={styles.previewKarigar}>
-                            <span>🆔</span> {r.karigar}
+                            🔒 {r.karigar} - {r.pcs || r.qty || 0} pcs
                           </span>
                         ) : (
                           <span style={styles.previewUnassigned}>⚪ Unassigned</span>
                         )}
                       </div>
-                      <span style={styles.previewQty}>{r.qty || r.pcs || 0}pcs</span>
                     </div>
                   ))}
                   {previewRows.length > 5 && (
@@ -1771,13 +1926,19 @@ export default function KarigarAssignment() {
             {loadingSheetData ? (
               <div style={styles.loadingContainer}>
                 <div style={styles.loadingSpinner}></div>
-                <p>Loading shades...</p>
+                <p>Loading shades from production data...</p>
               </div>
             ) : (
               <>
                 {/* Status Message */}
                 {status.message && (
                   <div style={{ ...styles.statusMessage, ...getStatusStyles() }}>
+                    <span style={styles.statusIcon}>
+                      {status.type === 'success' && '✅'}
+                      {status.type === 'error' && '❌'}
+                      {status.type === 'warning' && '⚠️'}
+                      {status.type === 'info' && 'ℹ️'}
+                    </span>
                     {status.message}
                   </div>
                 )}
@@ -1786,25 +1947,33 @@ export default function KarigarAssignment() {
                 {shades.length > 0 && (
                   <>
                     <div style={styles.shadesHeader}>
-                      <h3 style={styles.shadesTitle}>
+                      <div style={styles.shadesTitleContainer}>
                         <span style={styles.shadesTitleIcon}>🎨</span>
-                        Assign Karigars to Shades
-                      </h3>
-                      <span style={styles.shadesCount}>{shades.length} shades</span>
+                        <h3 style={styles.shadesTitle}>Shade Assignments</h3>
+                      </div>
+                      <div style={styles.shadesStats}>
+                        <span style={styles.assignedCount}>
+                          ✓ {totalAssignedPcs} / {lotSummary?.totalPcs || 0} pcs
+                        </span>
+                        <span style={styles.unassignedCount}>
+                          ⚪ {totalUnassignedPcs} pcs left
+                        </span>
+                        <span style={styles.shadesCount}>
+                          {shades.length} shades
+                        </span>
+                      </div>
                     </div>
 
                     {/* Active Assignment Hint */}
                     {activeShadeForAssignment && (
                       <div style={styles.activeShadeHint}>
-                        <span style={styles.activeShadeHintIcon}>👉</span>
+                        <span style={styles.activeShadeHintIcon}>🎯</span>
                         <div style={styles.activeShadeHintText}>
-                          <span>Currently assigning to shade: </span>
+                          <span>Currently assigning to: </span>
                           <strong>"{activeShadeForAssignment}"</strong>
-                          {shadePcs[activeShadeForAssignment] && 
-                            <span style={styles.activeShadeHintPcs}>
-                              ({shadePcs[activeShadeForAssignment]} pcs)
-                            </span>
-                          }
+                          <span style={styles.activeShadeHintPcs}>
+                            ({getRemainingPcsForShade(activeShadeForAssignment)}/{shadePcs[activeShadeForAssignment]} pcs remaining)
+                          </span>
                         </div>
                         <button 
                           onClick={() => setActiveShadeForAssignment(null)}
@@ -1816,84 +1985,118 @@ export default function KarigarAssignment() {
                     )}
 
                     <div style={styles.shadesGrid}>
-                      {shades.map((shade) => (
-                        <div 
-                          key={shade} 
-                          style={{
-                            ...styles.shadeItem,
-                            ...(activeShadeForAssignment === shade ? styles.shadeItemActive : {}),
-                            ...(karigars[shade] ? styles.shadeItemAssigned : {})
-                          }}
-                        >
-                          <div style={styles.shadeItemHeader}>
-                            <span style={styles.shadeItemName}>{shade}</span>
-                            <span style={styles.shadeItemPcs}>{shadePcs[shade] || 0} pcs</span>
-                          </div>
-                          
-                          {/* Display assigned karigar if any */}
-                          {karigars[shade] && (
-                            <div style={styles.assignedKarigarInfo}>
-                              <span style={styles.assignedKarigarIcon}>🆔</span>
-                              <span style={styles.assignedKarigarId}>{karigars[shade]}</span>
-                              {karigarNames[karigars[shade]] && (
-                                <span style={styles.assignedKarigarName}>
-                                  ({karigarNames[karigars[shade]]})
-                                </span>
-                              )}
+                      {shades.map((shade) => {
+                        const assignments = getShadeAssignments(shade);
+                        const remainingPcs = getRemainingPcsForShade(shade);
+                        const isFullyAssigned = remainingPcs <= 0;
+                        const totalAssigned = getTotalAssignedPcsForShade(shade);
+                        const total = shadePcs[shade] || 0;
+                        const progressPercent = total > 0 ? (totalAssigned / total) * 100 : 0;
+                        
+                        return (
+                          <div 
+                            key={shade} 
+                            style={{
+                              ...styles.shadeItem,
+                              ...(activeShadeForAssignment === shade ? styles.shadeItemActive : {}),
+                              ...(isFullyAssigned ? styles.shadeItemFullyAssigned : {}),
+                              ...(assignments.length > 0 ? styles.shadeItemHasAssignments : {})
+                            }}
+                          >
+                            <div style={styles.shadeItemHeader}>
+                              <div style={styles.shadeItemNameWrapper}>
+                                <span style={styles.shadeItemName}>{shade}</span>
+                                {isFullyAssigned && <span style={styles.fullyAssignedBadgeSmall}>✓ Full</span>}
+                                {!isFullyAssigned && assignments.length > 0 && (
+                                  <span style={styles.partialBadge}>Partial</span>
+                                )}
+                              </div>
+                              <div style={styles.shadeItemPcs}>{total.toLocaleString()} pcs</div>
                             </div>
-                          )}
-                          
-                          {/* Action Buttons */}
-                          <div style={styles.shadeActionButtons}>
-                            <button
-                              onClick={() => handleShadeClick(shade)}
-                              style={{
-                                ...styles.selectShadeButton,
-                                ...(!selectedSupervisor ? styles.selectShadeButtonDisabled : {}),
-                                ...(karigars[shade] ? styles.changeButton : {})
-                              }}
-                              disabled={!selectedSupervisor}
-                            >
-                              {karigars[shade] ? 'Change Karigar' : 'Select Karigar'}
-                            </button>
                             
-                            {karigars[shade] && (
+                            {/* Progress bar for this shade */}
+                            <div style={styles.shadeProgressBar}>
+                              <div style={{ ...styles.shadeProgressFill, width: `${progressPercent}%` }}></div>
+                            </div>
+                            
+                            {/* List of assigned karigars for this shade */}
+                            {assignments.length > 0 && (
+                              <div style={styles.assignedKarigarsList}>
+                                {assignments.map((assign) => (
+                                  <div key={assign.id} style={styles.assignedKarigarItem}>
+                                    <div style={styles.assignedKarigarInfo}>
+                                      <span style={styles.assignedKarigarIcon}>🆔</span>
+                                      <span style={styles.assignedKarigarId}>{assign.karigarId}</span>
+                                      {assign.karigarName && (
+                                        <span style={styles.assignedKarigarName}>{assign.karigarName}</span>
+                                      )}
+                                      <span style={styles.assignedPcsBadge}>{assign.assignedPcs} pcs</span>
+                                    </div>
+                                    <div style={styles.assignedActions}>
+                                      <button
+                                        onClick={() => handleEditQuantity(shade, assign.id, assign.assignedPcs)}
+                                        style={styles.editButton}
+                                        title="Edit quantity"
+                                      >
+                                        ✏️
+                                      </button>
+                                      <button
+                                        onClick={() => handleRemoveAssignment(shade, assign.id)}
+                                        style={styles.removeButtonSmall}
+                                        title="Remove assignment"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            
+                            {/* Action Buttons */}
+                            <div style={styles.shadeActionButtons}>
                               <button
-                                onClick={() => handleRemoveAssignment(shade)}
-                                style={styles.removeButton}
-                                title="Remove assignment"
+                                onClick={() => handleShadeClick(shade)}
+                                style={{
+                                  ...styles.assignMoreButton,
+                                  ...(!selectedSupervisor ? styles.assignMoreButtonDisabled : {}),
+                                  ...(isFullyAssigned ? styles.assignMoreButtonDisabled : {})
+                                }}
+                                disabled={!selectedSupervisor || isFullyAssigned}
+                                title={isFullyAssigned ? 'Shade is fully assigned' : 'Assign more karigars'}
                               >
-                                ✕
+                                {isFullyAssigned ? '✓ Fully Assigned' : (assignments.length > 0 ? '+ Add More' : 'Assign Karigar')}
                               </button>
+                            </div>
+                            
+                            {!isFullyAssigned && remainingPcs > 0 && remainingPcs < total && (
+                              <div style={styles.remainingPcsIndicator}>
+                                {remainingPcs} pcs remaining
+                              </div>
+                            )}
+                            
+                            {activeShadeForAssignment === shade && !isFullyAssigned && (
+                              <div style={styles.activeShadeIndicator}>
+                                👆 Click a member from sidebar to assign
+                              </div>
                             )}
                           </div>
-                          
-                          {activeShadeForAssignment === shade && (
-                            <div style={styles.activeShadeIndicator}>
-                              👆 Select karigar from sidebar
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
-                    {/* Assignment Summary */}
-                    <div style={styles.assignmentSummary}>
-                      <div style={styles.summaryStats}>
-                        <span>
-                          <span style={styles.summaryStatIcon}>✓</span>
-                          Assigned: {Object.values(karigars).filter(Boolean).length} / {shades.length} shades
-                        </span>
-                        <span>
-                          <span style={styles.summaryStatIcon}>📦</span>
-                          Pcs: {totalAssignedPcs} / {lotSummary?.totalPcs || 0}
-                        </span>
+                    {/* Overall Progress Bar */}
+                    <div style={styles.progressSection}>
+                      <div style={styles.progressLabel}>
+                        <span>Overall Assignment Progress</span>
+                        <span>{totalAssignedPcs} / {lotSummary?.totalPcs || 0} pieces ({Math.round((totalAssignedPcs / (lotSummary?.totalPcs || 1)) * 100)}%)</span>
                       </div>
-                      {unassignedShadesCount > 0 && (
-                        <div style={styles.unassignedWarning}>
-                          ⚠️ {unassignedShadesCount} shade{unassignedShadesCount > 1 ? 's' : ''} unassigned
-                        </div>
-                      )}
+                      <div style={styles.progressBar}>
+                        <div style={{
+                          ...styles.progressFill,
+                          width: `${(totalAssignedPcs / (lotSummary?.totalPcs || 1)) * 100}%`
+                        }}></div>
+                      </div>
                     </div>
 
                     {/* Action Buttons */}
@@ -1912,10 +2115,16 @@ export default function KarigarAssignment() {
                       <button
                         style={styles.clearButton}
                         onClick={() => {
-                          const empty = {};
-                          shades.forEach(s => empty[s] = '');
-                          setKarigars(empty);
-                          setStatus({ type: 'info', message: '🧹 All assignments cleared' });
+                          if (window.confirm('⚠️ This will clear all unsaved assignments. Are you sure?')) {
+                            // Reset assignments while keeping shades
+                            const resetAssignments = {};
+                            shades.forEach(shade => {
+                              resetAssignments[shade] = [];
+                            });
+                            setShadeAssignments(resetAssignments);
+                            setActiveShadeForAssignment(null);
+                            setStatus({ type: 'info', message: '🧹 Cleared all unsaved assignments' });
+                          }
                         }}
                       >
                         <span>🗑️</span>
@@ -1929,7 +2138,13 @@ export default function KarigarAssignment() {
                 {shades.length === 0 && !loadingSheetData && (
                   <div style={styles.noShades}>
                     <span style={styles.noShadesIcon}>📭</span>
-                    <p>{status.message || 'No shades found for this lot.'}</p>
+                    <p>No shades found for this lot</p>
+                    <button 
+                      onClick={() => handleLotSearch(lotSearch)}
+                      style={styles.retryButton}
+                    >
+                      Try Again
+                    </button>
                   </div>
                 )}
               </>
@@ -1945,9 +2160,9 @@ export default function KarigarAssignment() {
           <span style={styles.tipText}>
             {selectedSupervisor 
               ? activeShadeForAssignment
-                ? `Click on a karigar in the sidebar to assign to shade "${activeShadeForAssignment}"`
-                : `Click "Select Karigar" button on any shade to assign a karigar from ${selectedSupervisor}'s team`
-              : 'Select a supervisor first to assign karigar IDs'}
+                ? `Click on a team member to assign them to "${activeShadeForAssignment}" - you can assign multiple karigars to the same shade with split quantities`
+                : `Click "Assign Karigar" on any shade to assign multiple karigars. Each shade can have multiple karigars with divided quantities.`
+              : 'Select a supervisor first to view and assign team members'}
           </span>
         </div>
       )}
@@ -1959,132 +2174,141 @@ const styles = {
   container: {
     maxWidth: 2200,
     margin: '0 auto',
-    padding: '20px',
-    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    padding: '16px 25px',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     backgroundColor: '#ffffff',
     minHeight: '100vh',
-    position: 'relative',
   },
   compactHeader: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: '16px 20px',
-    marginBottom: 16,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-    border: '1px solid #e5e7eb',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 24,
+    flexWrap: 'wrap',
+    gap: 16,
   },
   headerLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
+    gap: 17,
   },
-  headerIcon: {
-    fontSize: '32px',
+  logoIcon: {
+    width: 48,
+    height: 48,
+    background: 'linear-gradient(145deg, #1e3a8a, #3b82f6, #6366f1)',
+    borderRadius: 16,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 28,
+    color: '#fff',
+    boxShadow: '0 12px 20px -10px rgba(59, 130, 246, 0.4)',
   },
   compactTitle: {
     margin: 0,
-    fontSize: '20px',
-    fontWeight: 600,
-    color: '#003097',
+    fontSize: 26,
+    fontWeight: 700,
+    letterSpacing: '-0.02em',
+    color: '#0f172a',
+  },
+  titleHighlight: {
+    background: 'linear-gradient(135deg, #2563eb, #4f46e5, #7c3aed)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
   },
   compactSubtitle: {
-    margin: '2px 0 0',
-    fontSize: '12px',
-    color: '#000000',
+    margin: '4px 0 0',
+    fontSize: 13,
+    color: '#334155',
   },
   headerRight: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
   },
   headerStats: {
     display: 'flex',
-    gap: 8,
+    gap: 12,
   },
-  statPill: {
-    padding: '4px 12px',
+  statCard: {
     backgroundColor: '#ffffff',
+    padding: '8px 20px',
     borderRadius: 20,
-    fontSize: '12px',
-    color: '#000000',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    border: '1px solid #e5e7eb',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.03)',
+    border: '1px solid rgba(59,130,246,0.12)',
+    textAlign: 'center',
+    minWidth: 100,
+    backdropFilter: 'blur(2px)',
+    transition: 'all 0.2s ease',
   },
-  statPillIcon: {
-    fontSize: '14px',
+  statValue: {
+    display: 'block',
+    fontSize: 22,
+    fontWeight: 800,
+    color: '#1e293b',
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#4b5563',
+    textTransform: 'uppercase',
+    letterSpacing: '0.6px',
+    fontWeight: 500,
   },
   historyButton: {
-    padding: '8px 16px',
-    backgroundColor: '#8b5cf6',
-    color: '#ffffff',
+    padding: '10px 22px',
+    background: 'linear-gradient(105deg, #2563eb, #4f46e5)',
+    color: '#fff',
     border: 'none',
-    borderRadius: 8,
-    fontSize: '13px',
-    fontWeight: 500,
+    borderRadius: 40,
+    fontSize: 13,
+    fontWeight: 600,
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    transition: 'all 0.2s',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    transition: 'all 0.25s',
+    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
   },
   historyButtonIcon: {
-    fontSize: '16px',
+    fontSize: 16,
   },
-  rateListButton: {
-    padding: '8px 16px',
-    backgroundColor: '#059669',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: 8,
-    fontSize: '13px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    transition: 'all 0.2s',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-  },
-  rateListButtonIcon: {
-    fontSize: '16px',
-  },
+  // History Dropdown
   historyDropdown: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e7eb',
-    borderRadius: 8,
-    marginBottom: 16,
-    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+    position: 'absolute',
+    top: 100,
+    right: 25,
+    width: 400,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    boxShadow: '0 20px 35px -12px rgba(0,0,0,0.2)',
+    border: '1px solid #eef2ff',
+    zIndex: 100,
+    maxHeight: 400,
     overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
   },
   historyHeader: {
-    padding: '12px 16px',
-    backgroundColor: '#f9fafb',
-    borderBottom: '1px solid #e5e7eb',
+    padding: '14px 20px',
+    borderBottom: '1px solid #eef2ff',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#111827',
+    fontWeight: 600,
+    backgroundColor: '#fafdff',
   },
   historyList: {
-    maxHeight: '200px',
     overflowY: 'auto',
-    padding: '8px',
+    maxHeight: 350,
   },
   historyItem: {
-    padding: '8px 12px',
-    borderBottom: '1px solid #f3f4f6',
+    padding: '12px 20px',
+    borderBottom: '1px solid #f8fafc',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    fontSize: '12px',
+    fontSize: 13,
   },
   historyItemLeft: {
     display: 'flex',
@@ -2093,19 +2317,22 @@ const styles = {
     flexWrap: 'wrap',
   },
   historyItemLot: {
-    fontWeight: 600,
-    color: '#059669',
+    fontWeight: 700,
+    color: '#2563eb',
   },
   historyItemShade: {
-    color: '#111827',
+    color: '#0f172a',
   },
   historyItemKarigar: {
-    color: '#8b5cf6',
     fontFamily: 'monospace',
+    backgroundColor: '#f1f5f9',
+    padding: '2px 8px',
+    borderRadius: 12,
+    fontSize: 11,
   },
   historyItemName: {
-    color: '#6b7280',
-    fontSize: '11px',
+    fontSize: 11,
+    color: '#64748b',
   },
   historyItemRight: {
     display: 'flex',
@@ -2113,175 +2340,279 @@ const styles = {
     alignItems: 'center',
   },
   historyItemPcs: {
+    fontWeight: 600,
     color: '#059669',
-    fontWeight: 500,
   },
   historyItemTime: {
-    color: '#9ca3af',
-    fontSize: '11px',
+    fontSize: 10,
+    color: '#94a3b8',
   },
   noHistory: {
-    padding: '20px',
+    padding: '40px',
     textAlign: 'center',
-    color: '#6b7280',
-    fontSize: '12px',
+    color: '#94a3b8',
+  },
+  clearHistorySmall: {
+    padding: '4px 12px',
+    backgroundColor: '#f1f5f9',
+    border: 'none',
+    borderRadius: 20,
+    fontSize: 11,
+    cursor: 'pointer',
+    marginRight: 8,
+  },
+  closeDropdownButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: 18,
+    cursor: 'pointer',
+    color: '#94a3b8',
+    padding: '0 4px',
+  },
+  // Supervisor Section
+  supervisorSection: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: '18px 24px',
+    marginBottom: 24,
+    border: '1px solid #eef2ff',
+    boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.05)',
   },
   supervisorRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 16,
     flexWrap: 'wrap',
   },
   supervisorButton: {
-    padding: '10px 16px',
-    backgroundColor: '#f3f4f6',
-    color: '#111827',
-    border: '1px solid #e5e7eb',
-    borderRadius: 8,
-    fontSize: '13px',
-    fontWeight: 500,
+    padding: '10px 24px',
+    backgroundColor: '#f1f5f9',
+    color: '#1f2937',
+    border: '1px solid #e2e8f0',
+    borderRadius: 40,
+    fontSize: 14,
+    fontWeight: 600,
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     gap: 8,
     transition: 'all 0.2s',
-    flex: '0 0 auto',
   },
   supervisorButtonIcon: {
-    fontSize: '16px',
+    fontSize: 16,
   },
   selectedSupervisorBadge: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
-    padding: '6px 12px',
-    backgroundColor: '#ecfdf5',
-    border: '1px solid #a7f3d0',
-    borderRadius: 20,
-    fontSize: '13px',
-    color: '#065f46',
-    flex: '0 0 auto',
+    gap: 8,
+    padding: '8px 18px',
+    backgroundColor: '#eef2ff',
+    borderRadius: 40,
+    border: '1px solid #c7d2fe',
   },
   selectedSupervisorIcon: {
-    fontSize: '14px',
-    color: '#059669',
+    fontSize: 14,
+    color: '#2563eb',
   },
   selectedSupervisorLabel: {
-    fontSize: '12px',
-    color: '#047857',
+    fontSize: 12,
+    color: '#1e40af',
+    fontWeight: 500,
   },
   selectedSupervisorName: {
-    fontWeight: 600,
-    color: '#047857',
+    fontWeight: 700,
+    color: '#1e3a8a',
   },
   clearSupervisorButton: {
     background: 'none',
     border: 'none',
-    color: '#9ca3af',
+    color: '#94a3b8',
     cursor: 'pointer',
-    fontSize: '14px',
+    fontSize: 14,
     padding: '2px 6px',
-    marginLeft: 4,
   },
   detailsButton: {
-    padding: '10px 16px',
+    padding: '10px 20px',
     backgroundColor: '#e0f2fe',
-    color: '#0369a1',
+    color: '#0284c7',
     border: '1px solid #bae6fd',
-    borderRadius: 8,
-    fontSize: '13px',
-    fontWeight: 500,
+    borderRadius: 40,
+    fontSize: 13,
+    fontWeight: 600,
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    transition: 'all 0.2s',
-    flex: '0 0 auto',
   },
   detailsButtonIcon: {
-    fontSize: '16px',
+    fontSize: 14,
   },
   quickAssignBadge: {
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
-    padding: '4px 10px',
-    backgroundColor: '#fef3c7',
-    border: '1px solid #fde68a',
-    borderRadius: 20,
-    fontSize: '12px',
-    color: '#92400e',
+    gap: 6,
+    padding: '6px 16px',
+    backgroundColor: '#fef9c3',
+    borderRadius: 40,
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#854d0e',
   },
   quickAssignIcon: {
-    fontSize: '14px',
+    fontSize: 12,
   },
   supervisorDropdown: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e7eb',
-    borderRadius: 8,
-    marginBottom: 16,
-    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+    marginTop: 18,
+    border: '1px solid #e2e8f0',
+    borderRadius: 20,
     overflow: 'hidden',
+    backgroundColor: '#fff',
+    boxShadow: '0 12px 24px -12px rgba(0,0,0,0.12)',
   },
   supervisorDropdownHeader: {
-    padding: '12px 16px',
-    backgroundColor: '#f9fafb',
-    borderBottom: '1px solid #e5e7eb',
+    padding: '14px 20px',
+    backgroundColor: '#fafcff',
+    borderBottom: '1px solid #eef2ff',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#111827',
-  },
-  closeDropdownButton: {
-    background: 'none',
-    border: 'none',
-    color: '#6b7280',
-    cursor: 'pointer',
-    fontSize: '14px',
-    padding: '4px 8px',
+    fontSize: 14,
+    fontWeight: 600,
+    color: '#1e293b',
   },
   supervisorList: {
-    maxHeight: '300px',
+    maxHeight: 280,
     overflowY: 'auto',
-    padding: '8px',
   },
   supervisorItem: {
-    padding: '10px 12px',
-    borderBottom: '1px solid #f3f4f6',
+    padding: '12px 20px',
+    borderBottom: '1px solid #f1f5f9',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     cursor: 'pointer',
-    transition: 'background-color 0.2s',
+    transition: 'background 0.2s',
   },
   supervisorItemLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   supervisorItemIcon: {
-    fontSize: '16px',
-    color: '#6b7280',
+    fontSize: 18,
+    color: '#3b82f6',
   },
   supervisorItemName: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#111827',
+    fontWeight: 600,
+    fontSize: 14,
+    color: '#0f172a',
   },
   supervisorItemType: {
-    fontSize: '11px',
-    color: '#6b7280',
+    fontSize: 11,
+    color: '#64748b',
     marginTop: 2,
   },
   supervisorItemSelect: {
-    fontSize: '11px',
-    color: '#3b82f6',
+    fontSize: 12,
+    color: '#2563eb',
     backgroundColor: '#eff6ff',
-    padding: '2px 8px',
-    borderRadius: 4,
+    padding: '4px 12px',
+    borderRadius: 30,
+    fontWeight: 500,
+  },
+  // Modal Styles
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2000,
+  },
+  modal: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    width: 450,
+    maxWidth: '90%',
+    boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+  },
+  modalHeader: {
+    padding: '20px 24px',
+    borderBottom: '1px solid #eef2ff',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: 18,
+    fontWeight: 700,
+    color: '#0f172a',
+  },
+  modalClose: {
+    background: 'none',
+    border: 'none',
+    fontSize: 20,
+    cursor: 'pointer',
+    color: '#94a3b8',
+  },
+  modalBody: {
+    padding: '24px',
+  },
+  modalText: {
+    margin: '0 0 12px 0',
+    fontSize: 14,
+    color: '#334155',
+  },
+  modalInputGroup: {
+    marginTop: 16,
+  },
+  modalLabel: {
+    display: 'block',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#1e293b',
+    marginBottom: 8,
+  },
+  modalInput: {
+    width: '100%',
+    padding: '12px 16px',
+    border: '1px solid #cbd5e1',
+    borderRadius: 12,
+    fontSize: 14,
+    outline: 'none',
+    transition: 'border-color 0.2s',
+  },
+  modalFooter: {
+    padding: '16px 24px',
+    borderTop: '1px solid #eef2ff',
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  modalCancelButton: {
+    padding: '10px 20px',
+    backgroundColor: '#f1f5f9',
+    border: 'none',
+    borderRadius: 40,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    color: '#475569',
+  },
+  modalConfirmButton: {
+    padding: '10px 20px',
+    backgroundColor: '#3b82f6',
+    border: 'none',
+    borderRadius: 40,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    color: '#fff',
   },
   // Sidebar Styles
   sidebarOverlay: {
@@ -2290,563 +2621,528 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
     display: 'flex',
     justifyContent: 'flex-end',
     zIndex: 1000,
-    animation: 'fadeIn 0.2s ease',
+    backdropFilter: 'blur(6px)',
   },
   sidebar: {
-    width: '600px',
+    width: 520,
     backgroundColor: '#ffffff',
     height: '100vh',
-    boxShadow: '-2px 0 8px rgba(0, 0, 0, 0.1)',
-    animation: 'slideIn 0.2s ease',
+    boxShadow: '-8px 0 30px rgba(0, 0, 0, 0.08)',
     display: 'flex',
     flexDirection: 'column',
+    borderTopLeftRadius: 28,
+    borderBottomLeftRadius: 28,
   },
   sidebarHeader: {
-    padding: '20px',
-    borderBottom: '1px solid #e5e7eb',
+    padding: '22px 28px',
+    borderBottom: '1px solid #eef2ff',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
-  },
-  sidebarHeaderActions: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  quickAssignSidebarBadge: {
-    padding: '4px 10px',
-    backgroundColor: '#fef3c7',
-    border: '1px solid #fde68a',
-    borderRadius: 20,
-    fontSize: '11px',
-    color: '#92400e',
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 28,
   },
   sidebarTitle: {
     margin: 0,
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#111827',
+    fontSize: 20,
+    fontWeight: 700,
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+    color: '#0f172a',
   },
   sidebarTitleIcon: {
-    fontSize: '20px',
-  },
-  closeSidebarButton: {
-    background: 'none',
-    border: 'none',
-    color: '#6b7280',
-    cursor: 'pointer',
-    fontSize: '18px',
-    padding: '4px 8px',
-    borderRadius: 4,
+    fontSize: 24,
   },
   sidebarContent: {
     flex: 1,
     overflowY: 'auto',
-    padding: '20px',
+    padding: '24px 28px',
+  },
+  sidebarHeaderActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+  },
+  quickAssignSidebarBadge: {
+    padding: '4px 14px',
+    backgroundColor: '#fef9c3',
+    borderRadius: 40,
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#854d0e',
+  },
+  closeSidebarButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: 22,
+    cursor: 'pointer',
+    color: '#94a3b8',
+    padding: '4px 8px',
+    transition: 'color 0.2s',
   },
   supervisorInfo: {
-    backgroundColor: '#f3f4f6',
-    padding: '12px',
-    borderRadius: 8,
-    marginBottom: 16,
+    backgroundColor: '#f8fafc',
+    padding: '14px 18px',
+    borderRadius: 20,
+    marginBottom: 24,
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     flexWrap: 'wrap',
+    border: '1px solid #eef2ff',
   },
   supervisorInfoLabel: {
-    fontSize: '12px',
-    color: '#6b7280',
+    fontSize: 12,
+    color: '#2563eb',
+    fontWeight: 500,
   },
   supervisorInfoValue: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#111827',
+    fontSize: 15,
+    fontWeight: 700,
+    color: '#0f172a',
   },
   supervisorInfoType: {
-    fontSize: '12px',
-    color: '#6b7280',
-    backgroundColor: '#e5e7eb',
-    padding: '2px 8px',
-    borderRadius: 12,
+    fontSize: 11,
+    color: '#475569',
+    backgroundColor: '#e2e8f0',
+    padding: '2px 10px',
+    borderRadius: 40,
   },
   activeAssignmentIndicator: {
-    backgroundColor: '#fef3c7',
+    backgroundColor: '#fffbeb',
     border: '1px solid #fde68a',
-    borderRadius: 8,
-    padding: '12px',
-    marginBottom: 16,
+    borderRadius: 20,
+    padding: '14px 18px',
+    marginBottom: 24,
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    fontSize: '13px',
-    color: '#92400e',
+    gap: 12,
+    fontSize: 13,
+    color: '#b45309',
   },
   activeAssignmentIcon: {
-    fontSize: '16px',
+    fontSize: 18,
   },
   activeAssignmentText: {
     flex: 1,
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 4,
   },
   activeAssignmentPcs: {
-    color: '#059669',
-    fontWeight: 500,
-    marginLeft: 4,
+    fontSize: 11,
+    color: '#92400e',
+    marginLeft: 6,
   },
   noActiveAssignment: {
-    backgroundColor: '#f3f4f6',
-    border: '1px solid #e5e7eb',
-    borderRadius: 8,
-    padding: '12px',
-    marginBottom: 16,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 20,
+    padding: '14px 18px',
+    marginBottom: 24,
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    fontSize: '13px',
-    color: '#6b7280',
+    gap: 10,
+    fontSize: 13,
+    color: '#475569',
   },
   noActiveIcon: {
-    fontSize: '16px',
+    fontSize: 16,
   },
   cancelAssignmentButton: {
     marginLeft: 'auto',
     background: 'none',
     border: 'none',
-    color: '#92400e',
+    fontSize: 16,
     cursor: 'pointer',
-    fontSize: '14px',
+    color: '#b45309',
     padding: '4px 8px',
-    borderRadius: 4,
   },
   karigarSearchContainer: {
     display: 'flex',
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    border: '1px solid #e5e7eb',
-    borderRadius: 8,
-    marginBottom: 16,
-    overflow: 'hidden',
-    position: 'relative',
+    borderRadius: 60,
+    padding: '4px 18px',
+    marginBottom: 24,
+    border: '1px solid #cbd5e1',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+    transition: 'all 0.2s',
   },
   karigarSearchIcon: {
-    padding: '0 12px',
-    fontSize: '16px',
-    color: '#9ca3af',
+    fontSize: 16,
+    color: '#3b82f6',
   },
   karigarSearchInput: {
     flex: 1,
-    padding: '10px 0',
+    padding: '12px 10px',
     border: 'none',
-    fontSize: '13px',
+    fontSize: 14,
+    backgroundColor: 'transparent',
     outline: 'none',
   },
   clearSearchButton: {
     background: 'none',
     border: 'none',
-    color: '#9ca3af',
+    fontSize: 16,
     cursor: 'pointer',
-    padding: '0 12px',
-    fontSize: '14px',
+    color: '#94a3b8',
+    padding: '4px 8px',
   },
   karigarCount: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    padding: '10px 12px',
-    backgroundColor: '#f0f9ff',
-    borderRadius: 8,
-    marginBottom: 16,
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#0369a1',
+    marginBottom: 18,
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#1d4ed8',
   },
   karigarCountIcon: {
-    fontSize: '16px',
+    fontSize: 14,
   },
   filteredHint: {
-    fontSize: '11px',
-    color: '#6b7280',
-    marginLeft: 4,
-  },
-  batchAssignHint: {
-    backgroundColor: '#ecfdf5',
-    border: '1px solid #a7f3d0',
-    borderRadius: 8,
-    padding: '10px 12px',
-    marginBottom: 16,
-    fontSize: '12px',
-    color: '#065f46',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    flexWrap: 'wrap',
-  },
-  batchAssignLink: {
-    background: 'none',
-    border: 'none',
-    color: '#059669',
-    fontWeight: 600,
-    textDecoration: 'underline',
-    cursor: 'pointer',
-    padding: '0 2px',
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: 'normal',
   },
   karigarList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
-  },
-  karigarTableHeader: {
-    display: 'grid',
-    gridTemplateColumns: '60px 100px 1fr 100px',
-    padding: '10px 14px',
-    backgroundColor: '#f9fafb',
-    borderRadius: 6,
-    fontSize: '11px',
-    fontWeight: 600,
-    color: '#6b7280',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    borderBottom: '2px solid #e5e7eb',
-  },
-  headerSrNo: {
-    textAlign: 'center',
-  },
-  headerId: {
-    paddingLeft: 4,
-  },
-  headerName: {
-    paddingLeft: 8,
-  },
-  headerAction: {
-    textAlign: 'center',
+    gap: 12,
   },
   karigarCard: {
-    display: 'grid',
-    gridTemplateColumns: '60px 100px 1fr 100px',
-    alignItems: 'center',
     backgroundColor: '#ffffff',
-    border: '1px solid #e5e7eb',
-    borderRadius: 8,
-    padding: '10px 14px',
+    border: '1px solid #eef2ff',
+    borderRadius: 20,
+    padding: '16px',
     transition: 'all 0.2s',
-    gap: 4,
+    boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
   },
-  karigarSrNo: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#6b7280',
-    textAlign: 'center',
-  },
-  karigarIdValue: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#059669',
-    fontFamily: 'monospace',
-    backgroundColor: '#d1fae5',
-    padding: '2px 6px',
-    borderRadius: 4,
-    textAlign: 'left',
-  },
-  karigarNameValue: {
-    fontSize: '13px',
-    color: '#0369a1',
-    paddingLeft: 8,
-    fontWeight: 500,
-    backgroundColor: '#e0f2fe',
-    padding: '2px 6px',
-    borderRadius: 4,
-    marginLeft: 4,
-  },
-  karigarActions: {
+  karigarCardHeader: {
     display: 'flex',
-    gap: 4,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  karigarCardInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  karigarIdBadge: {
+    padding: '4px 14px',
+    backgroundColor: '#dbeafe',
+    borderRadius: 40,
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#1e40af',
+    fontFamily: 'monospace',
+  },
+  karigarNameText: {
+    fontSize: 14,
+    color: '#334155',
+    fontWeight: 500,
   },
   selectKarigarButton: {
-    padding: '4px 8px',
+    padding: '8px 20px',
     backgroundColor: '#3b82f6',
-    color: '#ffffff',
+    color: '#fff',
     border: 'none',
-    borderRadius: 4,
-    fontSize: '11px',
-    fontWeight: 500,
+    borderRadius: 40,
+    fontSize: 12,
+    fontWeight: 600,
     cursor: 'pointer',
     transition: 'all 0.2s',
-    width: 'fit-content',
   },
   selectKarigarButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: '#94a3b8',
     cursor: 'not-allowed',
-    opacity: 0.5,
+    opacity: 0.6,
   },
-  batchAssignButton: {
-    padding: '4px 6px',
-    backgroundColor: '#8b5cf6',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: 4,
-    fontSize: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
+  noKarigars: {
+    textAlign: 'center',
+    padding: '48px 20px',
+    color: '#94a3b8',
+  },
+  noKarigarsIcon: {
+    fontSize: 48,
+    display: 'block',
+    marginBottom: 12,
   },
   sidebarLoading: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: '40px 20px',
-    color: '#6b7280',
+    padding: '48px',
+    color: '#2563eb',
   },
   loadingSpinnerSmall: {
-    width: 24,
-    height: 24,
-    border: '2px solid #e5e7eb',
-    borderTopColor: '#111827',
+    width: 32,
+    height: 32,
+    border: '3px solid #e2e8f0',
+    borderTopColor: '#3b82f6',
     borderRadius: '50%',
-    margin: '0 auto 12px',
     animation: 'spin 1s linear infinite',
-  },
-  noKarigars: {
-    textAlign: 'center',
-    padding: '40px 20px',
-    color: '#6b7280',
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-  },
-  noKarigarsIcon: {
-    fontSize: '36px',
-    display: 'block',
     marginBottom: 12,
   },
+  spinnerSmallLight: {
+    width: 18,
+    height: 18,
+    border: '2px solid rgba(255,255,255,0.3)',
+    borderTopColor: '#fff',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+  },
+  spinnerMini: {
+    width: 16,
+    height: 16,
+    border: '2px solid #e2e8f0',
+    borderTopColor: '#3b82f6',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+  },
+  // Search Section
   searchSection: {
-    marginBottom: 20,
+    marginBottom: 24,
     position: 'relative',
   },
   searchBar: {
     display: 'flex',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e7eb',
-    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderRadius: 60,
     overflow: 'hidden',
-    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0',
+    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.02)',
   },
   searchIcon: {
-    padding: '0 12px',
-    fontSize: '18px',
-    color: '#00338b',
+    padding: '0 18px',
+    fontSize: 18,
+    color: '#3b82f6',
   },
   searchInput: {
     flex: 1,
-    padding: '12px 0',
+    padding: '14px 0',
     border: 'none',
-    fontSize: '14px',
+    fontSize: 15,
     outline: 'none',
   },
   searchButton: {
-    padding: '12px 20px',
-    backgroundColor: '#111827',
-    color: '#ffffff',
+    padding: '14px 32px',
+    background: 'linear-gradient(100deg, #2563eb, #4f46e5)',
+    color: '#fff',
     border: 'none',
-    fontSize: '14px',
-    fontWeight: 500,
+    fontSize: 14,
+    fontWeight: 600,
     cursor: 'pointer',
-    transition: 'background-color 0.2s',
+    transition: 'all 0.2s',
+    minWidth: 130,
   },
   suggestions: {
     position: 'absolute',
-    top: 'calc(100% - 4px)',
+    top: 'calc(100% + 6px)',
     left: 0,
     right: 0,
     backgroundColor: '#ffffff',
-    border: '1px solid #e5e7eb',
-    borderRadius: 8,
-    marginTop: 4,
-    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+    borderRadius: 24,
+    border: '1px solid #eef2ff',
+    boxShadow: '0 20px 30px -12px rgba(0,0,0,0.12)',
     zIndex: 10,
   },
   suggestionsHeader: {
-    padding: '10px 16px',
-    fontSize: '12px',
-    color: '#6b7280',
-    borderBottom: '1px solid #e5e7eb',
+    padding: '14px 20px',
+    fontSize: 12,
+    color: '#1e40af',
+    borderBottom: '1px solid #f1f5f9',
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  clearHistorySmall: {
-    padding: '2px 8px',
-    backgroundColor: 'transparent',
-    border: '1px solid #e5e7eb',
-    borderRadius: 4,
-    fontSize: '11px',
-    color: '#6b7280',
-    cursor: 'pointer',
+    fontWeight: 600,
   },
   suggestionItem: {
-    padding: '10px 16px',
+    padding: '12px 20px',
     cursor: 'pointer',
-    fontSize: '13px',
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    borderBottom: '1px solid #f3f4f6',
+    gap: 12,
+    borderBottom: '1px solid #f8fafc',
+    transition: 'background 0.2s',
   },
   suggestionIcon: {
-    fontSize: '14px',
-    color: '#9ca3af',
+    fontSize: 14,
+    color: '#64748b',
   },
+  // Two Column Layout
   twoColumnLayout: {
     display: 'grid',
-    gridTemplateColumns: '320px 1fr',
-    gap: 16,
-    marginBottom: 16,
+    gridTemplateColumns: '380px 1fr',
+    gap: 28,
+    marginBottom: 24,
   },
   leftColumn: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 16,
+    gap: 24,
   },
   rightColumn: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: '16px',
-    border: '1px solid #e5e7eb',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+    borderRadius: 28,
+    padding: '24px 28px',
+    border: '1px solid #eef2ff',
+    boxShadow: '0 12px 24px -12px rgba(0, 0, 0, 0.06)',
   },
+  // Left Column Cards
   activeLotCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: '14px 16px',
-    border: '1px solid #e5e7eb',
+    borderRadius: 24,
+    padding: '20px 24px',
+    border: '1px solid #eef2ff',
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
+    gap: 20,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.02)',
   },
   activeLotIcon: {
-    fontSize: '18px',
-  },
-  activeLotLabel: {
-    fontSize: '13px',
-    color: '#f10014',
-  },
-  activeLotNumber: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#111827',
-    backgroundColor: '#f3f4f6',
-    padding: '4px 10px',
-    borderRadius: 6,
-  },
-  unassignedBadge: {
-    marginLeft: 'auto',
-    padding: '4px 10px',
-    backgroundColor: '#fef3c7',
-    border: '1px solid #fde68a',
-    borderRadius: 20,
-    fontSize: '11px',
-    color: '#92400e',
-  },
-  summaryCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    border: '1px solid #e5e7eb',
-    overflow: 'hidden',
-  },
-  summaryCardHeader: {
-    padding: '14px 16px',
-    borderBottom: '1px solid #e5e7eb',
+    width: 56,
+    height: 56,
+    backgroundColor: '#fee2e2',
+    borderRadius: 24,
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#f9fafb',
+    justifyContent: 'center',
+    fontSize: 28,
+    color: '#b91c1c',
+  },
+  activeLotContent: {
+    flex: 1,
+  },
+  activeLotLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: '0.8px',
+    fontWeight: 600,
+  },
+  activeLotNumber: {
+    fontSize: 26,
+    fontWeight: 800,
+    color: '#dc2626',
+  },
+  unassignedBadge: {
+    padding: '6px 16px',
+    backgroundColor: '#fef9c3',
+    borderRadius: 40,
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#854d0e',
+  },
+  fullyAssignedBadge: {
+    padding: '6px 16px',
+    backgroundColor: '#d1fae5',
+    borderRadius: 40,
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#065f46',
+  },
+  summaryCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    border: '1px solid #eef2ff',
+    overflow: 'hidden',
+    boxShadow: '0 4px 14px rgba(0,0,0,0.02)',
+  },
+  summaryCardHeader: {
+    padding: '16px 24px',
+    borderBottom: '1px solid #eef2ff',
+    backgroundColor: '#fafdff',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
   },
   summaryCardIcon: {
-    fontSize: '18px',
+    fontSize: 20,
+    color: '#2563eb',
   },
   summaryCardTitle: {
     margin: 0,
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#111827',
+    fontSize: 16,
+    fontWeight: 700,
+    color: '#0f172a',
   },
   summaryGrid: {
-    padding: '12px',
+    padding: '16px 24px',
   },
   summaryRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '8px 0',
-    borderBottom: '1px solid #f3f4f6',
+    padding: '10px 0',
   },
   summaryLabel: {
-    fontSize: '12px',
-    color: '#000000',
+    fontSize: 13,
+    color: '#2563eb',
+    fontWeight: 500,
   },
   summaryValue: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#111827',
-    backgroundColor: '#f9fafb',
-    padding: '2px 8px',
-    borderRadius: 4,
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#1e293b',
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: '#eef2ff',
+    margin: '8px 0',
+  },
+  summaryLabelTotal: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: '#0f172a',
   },
   summaryValueTotal: {
-    fontWeight: 600,
+    fontSize: 20,
+    fontWeight: 800,
     color: '#059669',
-    backgroundColor: '#d1fae5',
-    border: '1px solid #a7f3d0',
   },
   previewCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    border: '1px solid #e5e7eb',
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    border: '1px solid #eef2ff',
     overflow: 'hidden',
   },
   previewCardHeader: {
-    padding: '14px 16px',
-    borderBottom: '1px solid #e5e7eb',
+    padding: '16px 24px',
+    borderBottom: '1px solid #eef2ff',
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#f9fafb',
+    gap: 12,
+    backgroundColor: '#fafdff',
   },
   previewIcon: {
-    fontSize: '18px',
+    fontSize: 18,
   },
   previewTitle: {
     margin: 0,
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#111827',
+    fontSize: 16,
+    fontWeight: 700,
     flex: 1,
+    color: '#0f172a',
   },
   previewCount: {
-    backgroundColor: '#e5e7eb',
-    padding: '2px 8px',
-    borderRadius: 12,
-    fontSize: '11px',
-    fontWeight: 500,
+    backgroundColor: '#e2e8f0',
+    padding: '2px 12px',
+    borderRadius: 40,
+    fontSize: 12,
+    fontWeight: 600,
   },
   previewList: {
-    padding: '8px',
+    padding: '4px 0',
   },
   previewItem: {
-    padding: '10px',
-    borderBottom: '1px solid #f3f4f6',
+    padding: '12px 24px',
+    borderBottom: '1px solid #f8fafc',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -2857,60 +3153,393 @@ const styles = {
     gap: 4,
   },
   previewShade: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#111827',
+    fontSize: 14,
+    fontWeight: 700,
+    color: '#0f172a',
   },
   previewKarigar: {
-    fontSize: '11px',
+    fontSize: 11,
     color: '#059669',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 2,
-    backgroundColor: '#d1fae5',
-    padding: '2px 6px',
-    borderRadius: 4,
-    width: 'fit-content',
+    fontWeight: 500,
   },
   previewUnassigned: {
-    fontSize: '11px',
-    color: '#9ca3af',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 2,
+    fontSize: 11,
+    color: '#94a3b8',
   },
   previewQty: {
-    fontSize: '11px',
-    color: '#6b7280',
-    backgroundColor: '#f3f4f6',
-    padding: '2px 6px',
-    borderRadius: 4,
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#475569',
   },
   previewMore: {
-    padding: '10px',
-    fontSize: '11px',
-    color: '#6b7280',
+    padding: '14px 24px',
     textAlign: 'center',
-    fontStyle: 'italic',
+    fontSize: 12,
+    color: '#3b82f6',
+    fontWeight: 500,
   },
-  statusMessage: {
-    marginBottom: 16,
-    padding: '10px 14px',
-    borderRadius: 8,
-    fontSize: '13px',
+  // Shades Grid
+  shadesHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  shadesTitleContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+  },
+  shadesTitleIcon: {
+    fontSize: 24,
+    color: '#2563eb',
+  },
+  shadesTitle: {
+    margin: 0,
+    fontSize: 20,
+    fontWeight: 800,
+    color: '#0f172a',
+  },
+  shadesStats: {
+    display: 'flex',
+    gap: 12,
+  },
+  assignedCount: {
+    fontSize: 13,
+    color: '#059669',
+    backgroundColor: '#ecfdf5',
+    padding: '6px 16px',
+    borderRadius: 40,
+    fontWeight: 600,
+  },
+  unassignedCount: {
+    fontSize: 13,
+    color: '#d97706',
+    backgroundColor: '#fef9c3',
+    padding: '6px 16px',
+    borderRadius: 40,
+    fontWeight: 600,
+  },
+  shadesCount: {
+    fontSize: 13,
+    color: '#2563eb',
+    backgroundColor: '#eff6ff',
+    padding: '6px 16px',
+    borderRadius: 40,
+    fontWeight: 600,
+  },
+  activeShadeHint: {
+    backgroundColor: '#fef9c3',
+    borderRadius: 20,
+    padding: '14px 20px',
+    marginBottom: 24,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    fontSize: 13,
+    border: '1px solid #fde68a',
+  },
+  activeShadeHintIcon: {
+    fontSize: 18,
+  },
+  activeShadeHintText: {
+    flex: 1,
+  },
+  activeShadeHintPcs: {
+    fontSize: 11,
+    color: '#92400e',
+    marginLeft: 6,
+  },
+  cancelShadeButton: {
+    marginLeft: 'auto',
+    background: 'none',
+    border: '1px solid #fde68a',
+    padding: '6px 16px',
+    borderRadius: 40,
+    fontSize: 11,
+    cursor: 'pointer',
+    color: '#92400e',
+  },
+  shadesGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
+    gap: 18,
+    marginBottom: 24,
+    maxHeight: 'calc(100vh - 400px)',
+    overflowY: 'auto',
+    padding: '2px',
+  },
+  shadeItem: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: '20px',
+    border: '1px solid #eef2ff',
+    transition: 'all 0.25s',
+    position: 'relative',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+  },
+  shadeItemActive: {
+    borderColor: '#3b82f6',
+    backgroundColor: '#f5f9ff',
+    boxShadow: '0 12px 24px -14px rgba(59,130,246,0.2)',
+  },
+  shadeItemHasAssignments: {
+    backgroundColor: '#f0fdf9',
+    borderColor: '#a7f3d0',
+  },
+  shadeItemFullyAssigned: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
+  },
+  shadeItemHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  shadeItemNameWrapper: {
+    flex: 1,
     display: 'flex',
     alignItems: 'center',
     gap: 8,
+    flexWrap: 'wrap',
+  },
+  shadeItemName: {
+    fontSize: 16,
+    fontWeight: 800,
+    color: '#0f172a',
+  },
+  shadeItemPcs: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#b91c1c',
+    backgroundColor: '#fee2e2',
+    padding: '4px 12px',
+    borderRadius: 40,
+  },
+  fullyAssignedBadgeSmall: {
+    fontSize: 10,
+    padding: '2px 8px',
+    backgroundColor: '#bbf7d0',
+    borderRadius: 20,
+    color: '#065f46',
+    fontWeight: 600,
+  },
+  partialBadge: {
+    fontSize: 10,
+    padding: '2px 8px',
+    backgroundColor: '#fed7aa',
+    borderRadius: 20,
+    color: '#9a3412',
+    fontWeight: 600,
+  },
+  shadeProgressBar: {
+    height: 6,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  shadeProgressFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #10b981, #34d399)',
+    borderRadius: 10,
+    transition: 'width 0.3s ease',
+  },
+  assignedKarigarsList: {
+    marginBottom: 14,
+    maxHeight: 120,
+    overflowY: 'auto',
+  },
+  assignedKarigarItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: '8px 12px',
+    borderRadius: 16,
+    marginBottom: 6,
+    border: '1px solid #e2e8f0',
+  },
+  assignedKarigarInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  assignedKarigarIcon: {
+    fontSize: 11,
+  },
+  assignedKarigarId: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#059669',
+    fontFamily: 'monospace',
+  },
+  assignedKarigarName: {
+    fontSize: 11,
+    color: '#334155',
+  },
+  assignedPcsBadge: {
+    fontSize: 10,
+    padding: '2px 8px',
+    backgroundColor: '#d1fae5',
+    borderRadius: 20,
+    color: '#065f46',
+    fontWeight: 600,
+  },
+  assignedActions: {
+    display: 'flex',
+    gap: 6,
+  },
+  editButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: 12,
+    cursor: 'pointer',
+    padding: '4px 6px',
+    borderRadius: 8,
+    color: '#3b82f6',
+  },
+  removeButtonSmall: {
+    background: 'none',
+    border: 'none',
+    fontSize: 12,
+    cursor: 'pointer',
+    padding: '4px 6px',
+    borderRadius: 8,
+    color: '#ef4444',
+  },
+  shadeActionButtons: {
+    display: 'flex',
+    gap: 10,
+  },
+  assignMoreButton: {
+    flex: 1,
+    padding: '10px 14px',
+    backgroundColor: '#3b82f6',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 40,
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  assignMoreButtonDisabled: {
+    backgroundColor: '#94a3b8',
+    cursor: 'not-allowed',
+    opacity: 0.6,
+  },
+  remainingPcsIndicator: {
+    position: 'absolute',
+    bottom: -8,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    fontSize: 10,
+    color: '#d97706',
+    backgroundColor: '#fef9c3',
+    padding: '2px 10px',
+    borderRadius: 20,
+    whiteSpace: 'nowrap',
+    border: '1px solid #fde68a',
+  },
+  activeShadeIndicator: {
+    position: 'absolute',
+    bottom: -10,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    fontSize: 10,
+    color: '#2563eb',
+    backgroundColor: '#eff6ff',
+    padding: '4px 14px',
+    borderRadius: 40,
+    whiteSpace: 'nowrap',
+    border: '1px solid #bfdbfe',
+    fontWeight: 600,
+  },
+  progressSection: {
+    marginBottom: 24,
+  },
+  progressLabel: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: 12,
+    color: '#475569',
+    marginBottom: 8,
+    fontWeight: 500,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #3b82f6, #6366f1)',
+    borderRadius: 10,
+    transition: 'width 0.3s ease',
+  },
+  actionButtons: {
+    display: 'flex',
+    gap: 14,
+  },
+  saveButton: {
+    flex: 2,
+    padding: '14px 22px',
+    background: 'linear-gradient(105deg, #2563eb, #4f46e5)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 60,
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
+  },
+  clearButton: {
+    flex: 1,
+    padding: '14px 22px',
+    backgroundColor: '#fff',
+    color: '#475569',
+    border: '1px solid #cbd5e1',
+    borderRadius: 60,
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  statusMessage: {
+    marginBottom: 24,
+    padding: '14px 20px',
+    borderRadius: 20,
+    fontSize: 13,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
   },
   statusSuccess: {
-    backgroundColor: '#f0fdf4',
-    color: '#166534',
-    border: '1px solid #dcfce7',
+    backgroundColor: '#ecfdf5',
+    color: '#065f46',
+    border: '1px solid #a7f3d0',
   },
   statusError: {
     backgroundColor: '#fef2f2',
     color: '#991b1b',
-    border: '1px solid #fee2e2',
+    border: '1px solid #fecaca',
   },
   statusWarning: {
     backgroundColor: '#fffbeb',
@@ -2922,356 +3551,69 @@ const styles = {
     color: '#1e40af',
     border: '1px solid #dbeafe',
   },
-  shadesHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  shadesTitle: {
-    margin: 0,
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#111827',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  },
-  shadesTitleIcon: {
-    fontSize: '18px',
-  },
-  shadesCount: {
-    fontSize: '12px',
-    color: '#6b7280',
-    backgroundColor: '#f3f4f6',
-    padding: '4px 10px',
-    borderRadius: 16,
-  },
-  activeShadeHint: {
-    backgroundColor: '#fef3c7',
-    border: '1px solid #fde68a',
-    borderRadius: 8,
-    padding: '10px 14px',
-    marginBottom: 16,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    fontSize: '13px',
-    color: '#92400e',
-  },
-  activeShadeHintIcon: {
-    fontSize: '16px',
-  },
-  activeShadeHintText: {
-    flex: 1,
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
-  activeShadeHintPcs: {
-    color: '#059669',
-    fontWeight: 500,
-  },
-  cancelShadeButton: {
-    padding: '4px 10px',
-    backgroundColor: 'transparent',
-    border: '1px solid #fde68a',
-    borderRadius: 4,
-    color: '#92400e',
-    fontSize: '11px',
-    cursor: 'pointer',
-  },
-  shadesGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 12,
-    marginBottom: 16,
-    maxHeight: 'calc(100vh - 400px)',
-    overflowY: 'auto',
-    padding: '2px',
-  },
-  shadeItem: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-    padding: '12px',
-    border: '1px solid #e5e7eb',
-    transition: 'all 0.2s',
-    position: 'relative',
-  },
-  shadeItemActive: {
-    borderColor: '#3b82f6',
-    backgroundColor: '#eff6ff',
-    boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.2)',
-  },
-  shadeItemAssigned: {
-    backgroundColor: '#f0fdf4',
-    borderColor: '#a7f3d0',
-  },
-  shadeItemHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  shadeItemName: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#111827',
-  },
-  shadeItemPcs: {
-    fontSize: '11px',
-    color: '#059669',
-    backgroundColor: '#d1fae5',
-    padding: '2px 6px',
-    borderRadius: 4,
-  },
-  assignedKarigarInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#ffffff',
-    padding: '6px 8px',
-    borderRadius: 4,
-    marginBottom: 8,
-    border: '1px solid #d1fae5',
-  },
-  assignedKarigarIcon: {
-    fontSize: '12px',
-    color: '#059669',
-  },
-  assignedKarigarId: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#059669',
-    fontFamily: 'monospace',
-  },
-  assignedKarigarName: {
-    fontSize: '11px',
-    color: '#6b7280',
-  },
-  shadeActionButtons: {
-    display: 'flex',
-    gap: 6,
-    marginTop: 4,
-  },
-  selectShadeButton: {
-    flex: 1,
-    padding: '6px 8px',
-    backgroundColor: '#3b82f6',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: 4,
-    fontSize: '11px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  selectShadeButtonDisabled: {
-    backgroundColor: '#9ca3af',
-    cursor: 'not-allowed',
-    opacity: 0.5,
-  },
-  changeButton: {
-    backgroundColor: '#8b5cf6',
-  },
-  removeButton: {
-    width: '28px',
-    height: '28px',
-    backgroundColor: '#fee2e2',
-    color: '#991b1b',
-    border: '1px solid #fecaca',
-    borderRadius: 4,
-    fontSize: '14px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all 0.2s',
-  },
-  activeShadeIndicator: {
-    position: 'absolute',
-    bottom: -6,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    fontSize: '9px',
-    color: '#3b82f6',
-    backgroundColor: '#eff6ff',
-    padding: '2px 8px',
-    borderRadius: 12,
-    border: '1px solid #93c5fd',
-    whiteSpace: 'nowrap',
-  },
-  assignmentSummary: {
-    marginBottom: 16,
-    padding: '10px',
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-    fontSize: '12px',
-  },
-  summaryStats: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    color: '#6b7280',
-  },
-  summaryStatIcon: {
-    marginRight: 4,
-  },
-  unassignedWarning: {
-    marginTop: 8,
-    padding: '8px',
-    backgroundColor: '#fef3c7',
-    borderRadius: 6,
-    fontSize: '11px',
-    color: '#92400e',
-    textAlign: 'center',
-  },
-  actionButtons: {
-    display: 'flex',
-    gap: 10,
-    borderTop: '1px solid #e5e7eb',
-    paddingTop: 16,
-  },
-  saveButton: {
-    flex: 2,
-    padding: '12px',
-    backgroundColor: '#111827',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: 8,
-    fontSize: '13px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    transition: 'all 0.2s',
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#9ca3af',
-    cursor: 'not-allowed',
-  },
-  clearButton: {
-    flex: 1,
-    padding: '12px',
-    backgroundColor: '#ffffff',
-    color: '#4b5563',
-    border: '1px solid #e5e7eb',
-    borderRadius: 8,
-    fontSize: '13px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    transition: 'all 0.2s',
-  },
   loadingContainer: {
-    padding: '40px 20px',
-    textAlign: 'center',
-    color: '#6b7280',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '80px 20px',
+    color: '#3b82f6',
   },
   loadingSpinner: {
-    width: 32,
-    height: 32,
-    border: '2px solid #e5e7eb',
-    borderTopColor: '#111827',
+    width: 44,
+    height: 44,
+    border: '3px solid #e2e8f0',
+    borderTopColor: '#3b82f6',
     borderRadius: '50%',
-    margin: '0 auto 12px',
     animation: 'spin 1s linear infinite',
+    marginBottom: 16,
   },
   noShades: {
-    padding: '40px 20px',
     textAlign: 'center',
-    color: '#6b7280',
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
+    padding: '80px 20px',
+    color: '#94a3b8',
   },
   noShadesIcon: {
-    fontSize: '36px',
+    fontSize: 56,
+    marginBottom: 20,
     display: 'block',
-    marginBottom: 12,
+    color: '#cbd5e1',
+  },
+  retryButton: {
+    marginTop: 20,
+    padding: '10px 28px',
+    backgroundColor: '#3b82f6',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 40,
+    cursor: 'pointer',
+    fontWeight: 600,
   },
   tipBox: {
-    backgroundColor: '#f9fafb',
-    border: '1px solid #e5e7eb',
-    borderRadius: 8,
-    padding: '10px 16px',
+    backgroundColor: '#f8fafc',
+    borderRadius: 20,
+    padding: '14px 24px',
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+    fontSize: 13,
+    color: '#1e293b',
+    border: '1px solid #eef2ff',
   },
   tipIcon: {
-    fontSize: '16px',
+    fontSize: 18,
+    color: '#3b82f6',
   },
   tipText: {
-    fontSize: '12px',
-    color: '#6b7280',
+    flex: 1,
   },
 };
 
-// Add global styles
-const style = document.createElement('style');
-style.textContent = `
+// Add keyframes for animations
+const styleSheet = document.createElement("style");
+styleSheet.textContent = `
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
-  
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  
-  @keyframes slideIn {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
-  }
-  
-  input:focus {
-    border-color: #111827 !important;
-    box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.1) !important;
-  }
-  
-  button:hover:not(:disabled) {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-  
-  .shade-item:hover {
-    border-color: #d1d5db;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-  }
-  
-  .suggestion-item:hover {
-    background-color: #f9fafb;
-  }
-  
-  .supervisor-item:hover {
-    background-color: #f9fafb;
-  }
-  
-  .karigar-card:hover {
-    border-color: #3b82f6;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
-  }
-  
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  
-  ::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
-  }
-  
-  ::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 3px;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover {
-    background: #a1a1a1;
-  }
 `;
-document.head.appendChild(style);
+document.head.appendChild(styleSheet);
