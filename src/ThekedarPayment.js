@@ -974,199 +974,365 @@ Available lots for payment: ${totalLots}`);
     }
   };
 
-  const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
-    const payableId = payableData.payableId || generatePayableId();
+const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
+  const payableId = payableData.payableId || generatePayableId();
+  
+  const numberToWords = (num) => {
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+      'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
     
-    const numberToWords = (num) => {
-      const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-        'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-      const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-      
-      const numToWords = (n) => {
-        if (n < 20) return ones[n];
-        if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '');
-        if (n < 1000) return ones[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' ' + numToWords(n%100) : '');
-        if (n < 100000) return numToWords(Math.floor(n/1000)) + ' Thousand' + (n%1000 ? ' ' + numToWords(n%1000) : '');
-        if (n < 10000000) return numToWords(Math.floor(n/100000)) + ' Lakh' + (n%100000 ? ' ' + numToWords(n%100000) : '');
-        return numToWords(Math.floor(n/10000000)) + ' Crore' + (n%10000000 ? ' ' + numToWords(n%10000000) : '');
-      };
-      
-      const whole = Math.floor(num);
-      const words = numToWords(whole);
-      return words;
+    const numToWords = (n) => {
+      if (n < 20) return ones[n];
+      if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '');
+      if (n < 1000) return ones[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' ' + numToWords(n%100) : '');
+      if (n < 100000) return numToWords(Math.floor(n/1000)) + ' Thousand' + (n%1000 ? ' ' + numToWords(n%1000) : '');
+      if (n < 10000000) return numToWords(Math.floor(n/100000)) + ' Lakh' + (n%100000 ? ' ' + numToWords(n%100000) : '');
+      return numToWords(Math.floor(n/10000000)) + ' Crore' + (n%10000000 ? ' ' + numToWords(n%10000000) : '');
     };
-
-    const amountInWords = numberToWords(payableData.amount);
-    const supervisorName = selectedSupervisor || payableData.createdBy || 'Supervisor';
     
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 8;
-    let yPos = 18;
+    const whole = Math.floor(num);
+    const words = numToWords(whole);
+    return words;
+  };
 
-    const formatNumber = (num) => {
-      return parseFloat(num || 0).toLocaleString('en-IN');
-    };
+  const amountInWords = numberToWords(payableData.amount);
+  const supervisorName = selectedSupervisor || payableData.createdBy || 'Supervisor';
+  
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 8;
+  let yPos = 18;
 
-    const currentDate = new Date().toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+  const formatNumber = (num) => {
+    return parseFloat(num || 0).toLocaleString('en-IN');
+  };
 
-    const allKarigarWages = new Map();
-    
-    selectedLotsData.forEach(lot => {
-      if (lot.karigarWageDetails) {
-        Object.values(lot.karigarWageDetails).forEach(karigar => {
-          if (!allKarigarWages.has(karigar.karigarId)) {
-            allKarigarWages.set(karigar.karigarId, {
-              karigarId: karigar.karigarId,
-              karigarName: karigar.karigarName,
-              totalQuantity: 0,
-              totalAmount: 0,
-              supervisor: supervisorName,
-              lots: []
-            });
-          }
-          const existing = allKarigarWages.get(karigar.karigarId);
-          existing.totalQuantity += karigar.totalQuantity;
-          existing.totalAmount += karigar.totalAmount;
-          existing.lots.push(...karigar.lots);
-        });
+  const currentDate = new Date().toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+
+  const allKarigarWages = new Map();
+  
+  selectedLotsData.forEach(lot => {
+    if (lot.karigarWageDetails) {
+      Object.values(lot.karigarWageDetails).forEach(karigar => {
+        if (!allKarigarWages.has(karigar.karigarId)) {
+          allKarigarWages.set(karigar.karigarId, {
+            karigarId: karigar.karigarId,
+            karigarName: karigar.karigarName,
+            totalQuantity: 0,
+            totalAmount: 0,
+            supervisor: supervisorName,
+            lots: []
+          });
+        }
+        const existing = allKarigarWages.get(karigar.karigarId);
+        existing.totalQuantity += karigar.totalQuantity;
+        existing.totalAmount += karigar.totalAmount;
+        existing.lots.push(...karigar.lots);
+      });
+    }
+  });
+  
+  const karigarWageArray = Array.from(allKarigarWages.values()).sort((a, b) => 
+    a.karigarName.localeCompare(b.karigarName)
+  );
+  
+  // Calculate grand totals
+  const grandTotalQuantity = selectedLotsData.reduce((sum, lot) => sum + lot.totalQuantity, 0);
+  const grandTotalAmount = selectedLotsData.reduce((sum, lot) => sum + lot.totalAmount, 0);
+  
+  // Calculate karigar summary totals
+  const karigarTotalQuantity = karigarWageArray.reduce((sum, k) => sum + k.totalQuantity, 0);
+  const karigarTotalAmount = karigarWageArray.reduce((sum, k) => sum + k.totalAmount, 0);
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.4);
+  doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("PAYMENT VOUCHER", pageWidth / 2, yPos, { align: "center" });
+  
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text("THEKEDAR SUPERVISOR PAYMENT SLIP", pageWidth / 2, yPos + 6, { align: "center" });
+  
+  doc.setFont("helvetica", "bold");
+  doc.text("VOUCHER NUMBER: " + payableId, pageWidth - margin - 2, yPos, { align: "right" });
+
+  yPos += 12;
+
+  doc.setLineWidth(0.3);
+  doc.rect(margin, yPos, pageWidth - (margin * 2), 28);
+  doc.line(pageWidth / 2 + 5, yPos, pageWidth / 2 + 5, yPos + 28);
+
+  doc.setFontSize(9);
+  const leftX = margin + 3;
+  const rightX = pageWidth / 2 + 8;
+
+  doc.setFont("helvetica", "bold"); doc.text("DATE:", leftX, yPos + 6);
+  doc.setFont("helvetica", "normal"); doc.text(currentDate, leftX + 15, yPos + 6);
+  doc.setFont("helvetica", "bold"); doc.text("PAYEE:", leftX, yPos + 12);
+  doc.setFont("helvetica", "normal"); doc.text(payableData.payeeName || '', leftX + 18, yPos + 12);
+  doc.setFont("helvetica", "bold"); doc.text("CATEGORY:", leftX, yPos + 18);
+  doc.setFont("helvetica", "normal"); doc.text(payableData.category || '', leftX + 22, yPos + 18);
+  doc.setFont("helvetica", "bold"); doc.text("STATUS:", leftX, yPos + 24);
+  doc.setFont("helvetica", "normal"); doc.text(payableData.status || '', leftX + 18, yPos + 24);
+
+  doc.setFont("helvetica", "bold"); doc.text("DUE DATE:", rightX, yPos + 6);
+  doc.setFont("helvetica", "normal"); doc.text(new Date(payableData.dueDate).toLocaleDateString('en-IN'), rightX + 20, yPos + 6);
+  doc.setFont("helvetica", "bold"); doc.text("PAYEE ID:", rightX, yPos + 12);
+  doc.setFont("helvetica", "normal"); doc.text(payableData.payeeId || '', rightX + 20, yPos + 12);
+  doc.setFont("helvetica", "bold"); doc.text("TOTAL QTY:", rightX, yPos + 18);
+  doc.setFont("helvetica", "normal"); doc.text(Math.round(grandTotalQuantity).toString(), rightX + 22, yPos + 18);
+  doc.setFont("helvetica", "bold"); doc.text("THEKEDAR:", rightX, yPos + 24);
+  doc.setFont("helvetica", "normal"); doc.text(supervisorName, rightX + 22, yPos + 24);
+
+  yPos += 28;
+
+  doc.setLineWidth(0.3);
+  doc.rect(margin, yPos, pageWidth - (margin * 2), 10);
+  doc.setFont("helvetica", "bold");
+  doc.text("Amount in Words :", margin + 3, yPos + 6.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(amountInWords + " Rupees Only", margin + 35, yPos + 6.5);
+
+  yPos += 20;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("LOT SUMMARY", margin, yPos);
+  yPos += 5;
+
+  const lotTableBody = selectedLotsData.map((lot, idx) => [
+    (idx + 1).toString(),
+    lot.lotNumber || '',
+    lot.brand || '',
+    lot.fabric || '',
+    lot.garmentType || '',
+    lot.karigarCount.toString(),
+    lot.totalQuantity.toString(),
+    lot.rate.toFixed(2),
+    formatNumber(lot.totalAmount)
+  ]);
+
+  // Add total row to LOT SUMMARY table
+  lotTableBody.push([
+    '',
+    '',
+    '',
+    '',
+    '',
+    'TOTAL',
+    grandTotalQuantity.toString(),
+    '',
+    formatNumber(grandTotalAmount)
+  ]);
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [['NO', 'LOT NO', 'BRAND', 'FABRIC', 'GARMENT TYPE', 'KARIGARS', 'QTY', 'RATE', 'AMOUNT']],
+    body: lotTableBody,
+    theme: 'grid',
+    styles: { 
+      lineColor: [0, 0, 0], 
+      lineWidth: 0.2, 
+      textColor: [0, 0, 0], 
+      halign: 'center',
+      fontSize: 8,
+      cellPadding: 2
+    },
+    headStyles: { 
+      fillColor: [240, 240, 240], 
+      textColor: [0, 0, 0], 
+      fontStyle: 'bold',
+      lineWidth: 0.2
+    },
+    bodyStyles: (data) => {
+      // Style the total row (last row) with header-style background and bold
+      if (data.row.index === lotTableBody.length - 1) {
+        return {
+          fontStyle: 'bold',
+          fillColor: [240, 240, 240], // Same as header background
+          textColor: [0, 0, 0],
+          halign: 'center'
+        };
       }
-    });
-    
-    const karigarWageArray = Array.from(allKarigarWages.values()).sort((a, b) => 
-      a.karigarName.localeCompare(b.karigarName)
-    );
-    
-    const grandTotalQuantity = selectedLotsData.reduce((sum, lot) => sum + lot.totalQuantity, 0);
-    const grandTotalAmount = selectedLotsData.reduce((sum, lot) => sum + lot.totalAmount, 0);
+      return {};
+    },
+    margin: { left: margin, right: margin },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 18, halign: 'center' },
+      2: { cellWidth: 25, halign: 'center' },
+      3: { cellWidth: 30, halign: 'center' },
+      4: { cellWidth: 28, halign: 'center' },
+      5: { cellWidth: 25, halign: 'center' },
+      6: { cellWidth: 15, halign: 'center' },
+      7: { cellWidth: 18, halign: 'center' },
+      8: { cellWidth: 25, halign: 'center' }
+    }
+  });
 
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.4);
-    doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+  yPos = doc.lastAutoTable.finalY + 8;
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("PAYMENT VOUCHER", pageWidth / 2, yPos, { align: "center" });
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text("THEKEDAR SUPERVISOR PAYMENT SLIP", pageWidth / 2, yPos + 6, { align: "center" });
-    
-    doc.setFont("helvetica", "bold");
-    doc.text("VOUCHER NUMBER: " + payableId, pageWidth - margin - 2, yPos, { align: "right" });
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("KARIGAR WISE SUMMARY", margin, yPos);
+  yPos += 5;
 
-    yPos += 12;
-
-    doc.setLineWidth(0.3);
-    doc.rect(margin, yPos, pageWidth - (margin * 2), 28);
-    doc.line(pageWidth / 2 + 5, yPos, pageWidth / 2 + 5, yPos + 28);
-
-    doc.setFontSize(9);
-    const leftX = margin + 3;
-    const rightX = pageWidth / 2 + 8;
-
-    doc.setFont("helvetica", "bold"); doc.text("DATE:", leftX, yPos + 6);
-    doc.setFont("helvetica", "normal"); doc.text(currentDate, leftX + 15, yPos + 6);
-    doc.setFont("helvetica", "bold"); doc.text("PAYEE:", leftX, yPos + 12);
-    doc.setFont("helvetica", "normal"); doc.text(payableData.payeeName || '', leftX + 18, yPos + 12);
-    doc.setFont("helvetica", "bold"); doc.text("CATEGORY:", leftX, yPos + 18);
-    doc.setFont("helvetica", "normal"); doc.text(payableData.category || '', leftX + 22, yPos + 18);
-    doc.setFont("helvetica", "bold"); doc.text("STATUS:", leftX, yPos + 24);
-    doc.setFont("helvetica", "normal"); doc.text(payableData.status || '', leftX + 18, yPos + 24);
-
-    doc.setFont("helvetica", "bold"); doc.text("DUE DATE:", rightX, yPos + 6);
-    doc.setFont("helvetica", "normal"); doc.text(new Date(payableData.dueDate).toLocaleDateString('en-IN'), rightX + 20, yPos + 6);
-    doc.setFont("helvetica", "bold"); doc.text("PAYEE ID:", rightX, yPos + 12);
-    doc.setFont("helvetica", "normal"); doc.text(payableData.payeeId || '', rightX + 20, yPos + 12);
-    doc.setFont("helvetica", "bold"); doc.text("TOTAL QTY:", rightX, yPos + 18);
-    doc.setFont("helvetica", "normal"); doc.text(Math.round(grandTotalQuantity).toString(), rightX + 22, yPos + 18);
-    doc.setFont("helvetica", "bold"); doc.text("THEKEDAR:", rightX, yPos + 24);
-    doc.setFont("helvetica", "normal"); doc.text(supervisorName, rightX + 22, yPos + 24);
-
-    yPos += 28;
-
-    doc.setLineWidth(0.3);
-    doc.rect(margin, yPos, pageWidth - (margin * 2), 10);
-    doc.setFont("helvetica", "bold");
-    doc.text("Amount in Words :", margin + 3, yPos + 6.5);
-    doc.setFont("helvetica", "normal");
-    doc.text(amountInWords + " Rupees Only", margin + 35, yPos + 6.5);
-
-    yPos += 20;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("LOT SUMMARY", margin, yPos);
-    yPos += 5;
-
-    const lotTableBody = selectedLotsData.map((lot, idx) => [
-      (idx + 1).toString(),
-      lot.lotNumber || '',
-      lot.brand || '',
-      lot.style || '',
-      lot.karigarCount.toString(),
-      lot.totalQuantity.toString(),
-      lot.rate.toFixed(2),
-      formatNumber(lot.totalAmount)
-    ]);
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [['NO', 'LOT NO', 'BRAND', 'STYLE', 'KARIGARS', 'QTY', 'RATE', 'AMOUNT']],
-      body: lotTableBody,
-      theme: 'grid',
-      styles: { 
-        lineColor: [0, 0, 0], 
-        lineWidth: 0.2, 
-        textColor: [0, 0, 0], 
-        halign: 'center',
-        fontSize: 8,
-        cellPadding: 2
-      },
-      headStyles: { 
-        fillColor: [240, 240, 240], 
-        textColor: [0, 0, 0], 
-        fontStyle: 'bold',
-        lineWidth: 0.2
-      },
-      margin: { left: margin, right: margin },
-      columnStyles: {
-        0: { cellWidth: 12, halign: 'center' },
-        1: { cellWidth: 20, halign: 'center' },
-        2: { cellWidth: 35, halign: 'center' },
-        3: { cellWidth: 35, halign: 'center' },
-        4: { cellWidth: 22, halign: 'center' },
-        5: { cellWidth: 22, halign: 'center' },
-        6: { cellWidth: 20, halign: 'center' },
-        7: { cellWidth: 28, halign: 'center' }
-      }
-    });
-
-    yPos = doc.lastAutoTable.finalY + 8;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("KARIGAR WISE SUMMARY", margin, yPos);
-    yPos += 5;
-
-    const karigarSummaryBody = karigarWageArray.map((karigar, idx) => [
+  const karigarSummaryBody = [
+    ...karigarWageArray.map((karigar, idx) => [
       (idx + 1).toString(),
       karigar.karigarId,
       karigar.karigarName,
       supervisorName,
       formatNumber(karigar.totalQuantity),
       formatNumber(karigar.totalAmount)
-    ]);
+    ]),
+    [
+      '',
+      '',
+      '',
+      'TOTAL',
+      formatNumber(karigarTotalQuantity),
+      formatNumber(karigarTotalAmount)
+    ]
+  ];
 
+  autoTable(doc, {
+    startY: yPos,
+    head: [['NO', 'KARIGAR ID', 'KARIGAR NAME', 'SUPERVISOR/THEKEDAR', 'TOTAL QTY', 'TOTAL AMOUNT']],
+    body: karigarSummaryBody,
+    theme: 'grid',
+    styles: { 
+      lineColor: [0, 0, 0], 
+      lineWidth: 0.2, 
+      textColor: [0, 0, 0], 
+      halign: 'center',
+      fontSize: 8,
+      cellPadding: 2
+    },
+    headStyles: { 
+      fillColor: [240, 240, 240], 
+      textColor: [0, 0, 0], 
+      fontStyle: 'bold',
+      lineWidth: 0.2
+    },
+    bodyStyles: (data) => {
+      if (data.row.index === karigarSummaryBody.length - 1) {
+        return {
+          fontStyle: 'bold',
+          fillColor: [240, 240, 240], // Same as header background
+          textColor: [0, 0, 0]
+        };
+      }
+      return {};
+    },
+    margin: { left: margin, right: margin },
+    columnStyles: {
+      0: { cellWidth: 12, halign: 'center' },
+      1: { cellWidth: 35, halign: 'center' },
+      2: { cellWidth: 45, halign: 'center' },
+      3: { cellWidth: 45, halign: 'center' },
+      4: { cellWidth: 25, halign: 'center' },
+      5: { cellWidth: 32, halign: 'center' }
+    }
+  });
+
+  yPos = doc.lastAutoTable.finalY + 12;
+
+  const lotDetailsMap = new Map();
+  selectedLotsData.forEach(lot => {
+    lotDetailsMap.set(lot.lotNumber, {
+      garmentType: lot.garmentType || '',
+      brand: lot.brand || '',
+      rate: lot.rate
+    });
+  });
+
+  for (let kIdx = 0; kIdx < karigarWageArray.length; kIdx++) {
+    const karigar = karigarWageArray[kIdx];
+    
+    if (yPos + 60 > pageHeight - 35) {
+      doc.addPage();
+      yPos = 20;
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("DETAILED KARIGAR WAGE BREAKDOWN (Continued)", margin, yPos);
+      yPos += 5;
+    }
+    
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.3);
+    doc.rect(margin, yPos, pageWidth - (margin * 2), 12);
+    doc.setFillColor(230, 230, 230);
+    doc.rect(margin, yPos, pageWidth - (margin * 2), 12, 'F');
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("KARIGAR ID: " + karigar.karigarId, margin + 3, yPos + 5);
+    doc.text("NAME: " + karigar.karigarName, margin + 65, yPos + 5);
+    doc.text("SUPERVISOR: " + supervisorName, margin + 130, yPos + 5);
+    
+    yPos += 16;
+    
+    const karigarTableBody = [];
+    
+    karigar.lots.forEach((lot, lotIdx) => {
+      const lotDetails = lotDetailsMap.get(lot.lotNumber) || {};
+      const garmentType = lotDetails.garmentType || '';
+      const rate = lotDetails.rate || 0;
+      
+      karigarTableBody.push([
+        (lotIdx + 1).toString(),
+        lot.lotNumber,
+        garmentType,
+        lot.shade,
+        lot.quantity.toString(),
+        rate.toFixed(2),
+        formatNumber(lot.amount)
+      ]);
+    });
+    
+    const dataRowsLength = karigarTableBody.length;
+    
+    // Add empty rows for spacing
+    karigarTableBody.push(['', '', '', '', '', '', '']);
+    karigarTableBody.push(['', '', '', '', '', '', '']);
+    
+    // Add total row with both quantity and amount
+    karigarTableBody.push([
+      '',
+      '',
+      '',
+      'TOTAL QTY',
+      karigar.totalQuantity.toString(),
+      'TOTAL',
+      formatNumber(karigar.totalAmount)
+    ]);
+    
+    // Add ADVANCE row below total
+    karigarTableBody.push([
+      '',
+      '',
+      '',
+      '',
+      '',
+      'ADVANCE',
+      ''
+    ]);
+    
     autoTable(doc, {
       startY: yPos,
-      head: [['NO', 'KARIGAR ID', 'KARIGAR NAME', 'SUPERVISOR/THEKEDAR', 'TOTAL QTY', 'TOTAL AMOUNT']],
-      body: karigarSummaryBody,
+      head: [['NO', 'LOT NO', 'GARMENT TYPE', 'SHADE', 'QTY', 'RATE', 'AMOUNT']],
+      body: karigarTableBody,
       theme: 'grid',
       styles: { 
         lineColor: [0, 0, 0], 
@@ -1177,205 +1343,199 @@ Available lots for payment: ${totalLots}`);
         cellPadding: 2
       },
       headStyles: { 
-        fillColor: [240, 240, 240], 
+        fillColor: [245, 245, 245], 
         textColor: [0, 0, 0], 
         fontStyle: 'bold',
         lineWidth: 0.2
       },
+      bodyStyles: (data) => {
+        if (data.row.index === karigarTableBody.length - 2) { // Total row
+          return {
+            fontStyle: 'bold',
+            fillColor: [240, 240, 240],
+            textColor: [0, 0, 0]
+          };
+        }
+        if (data.row.index === karigarTableBody.length - 1) { // Advance row
+          return {
+            fontStyle: 'bold',
+            fillColor: [255, 245, 235],
+            textColor: [0, 0, 0]
+          };
+        }
+        if (data.row.index >= dataRowsLength && data.row.index < dataRowsLength + 2) {
+          return {
+            fillColor: [255, 255, 240]
+          };
+        }
+        return {};
+      },
       margin: { left: margin, right: margin },
       columnStyles: {
         0: { cellWidth: 12, halign: 'center' },
-        1: { cellWidth: 35, halign: 'center' },
-        2: { cellWidth: 45, halign: 'center' },
+        1: { cellWidth: 22, halign: 'center' },
+        2: { cellWidth: 38, halign: 'center' },
         3: { cellWidth: 45, halign: 'center' },
-        4: { cellWidth: 25, halign: 'center' },
-        5: { cellWidth: 32, halign: 'center' }
+        4: { cellWidth: 20, halign: 'center' },
+        5: { cellWidth: 22, halign: 'center' },
+        6: { cellWidth: 35, halign: 'center' }
       }
     });
-
+    
     yPos = doc.lastAutoTable.finalY + 8;
-
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.3);
-    doc.rect(margin, yPos, pageWidth - (margin * 2), 14);
-    doc.setFillColor(250, 250, 250);
-    doc.rect(margin, yPos, pageWidth - (margin * 2), 14, 'F');
+    
+    // Simple RECD SIGN on the RIGHT side - no box, just text with signature line
+    const recdSignText = "RECD SIGN ____________________";
+    const textWidth = doc.getTextWidth(recdSignText);
+    const rightMarginX = pageWidth - margin - 10;
     
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("PAYABLE AMOUNT", margin + 70, yPos + 8);
-    doc.setFontSize(12);
-    doc.text("Rs " + formatNumber(grandTotalAmount), pageWidth - margin - 5, yPos + 8, { align: "right" });
-
-    yPos += 18;
-
-    const lotDetailsMap = new Map();
-    selectedLotsData.forEach(lot => {
-      lotDetailsMap.set(lot.lotNumber, {
-        garmentType: lot.garmentType || '',
-        style: lot.style || '',
-        brand: lot.brand || '',
-        rate: lot.rate
-      });
-    });
-
-    for (let kIdx = 0; kIdx < karigarWageArray.length; kIdx++) {
-      const karigar = karigarWageArray[kIdx];
-      
-      if (yPos + 50 > pageHeight - 35) {
-        doc.addPage();
-        yPos = 20;
-        
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.text("DETAILED KARIGAR WAGE BREAKDOWN (Continued)", margin, yPos);
-        yPos += 5;
-      }
-      
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.3);
-      doc.rect(margin, yPos, pageWidth - (margin * 2), 12);
-      doc.setFillColor(230, 230, 230);
-      doc.rect(margin, yPos, pageWidth - (margin * 2), 12, 'F');
-      
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.text("KARIGAR ID: " + karigar.karigarId, margin + 3, yPos + 5);
-      doc.text("NAME: " + karigar.karigarName, margin + 70, yPos + 5);
-      doc.text("SUPERVISOR: " + supervisorName, margin + 130, yPos + 5);
-      
-      yPos += 16;
-      
-      const karigarTableBody = [];
-      
-      karigar.lots.forEach((lot, lotIdx) => {
-        const lotDetails = lotDetailsMap.get(lot.lotNumber) || {};
-        const garmentType = lotDetails.garmentType || '';
-        const rate = lotDetails.rate || 0;
-        
-        karigarTableBody.push([
-          (lotIdx + 1).toString(),
-          lot.lotNumber,
-          garmentType,
-          lot.shade,
-          lot.quantity.toString(),
-          rate.toFixed(2),
-          formatNumber(lot.amount)
-        ]);
-      });
-      
-      karigarTableBody.push([
-        '',
-        '',
-        '',
-        '',
-        '',
-        'TOTAL',
-        formatNumber(karigar.totalAmount)
-      ]);
-      
-      autoTable(doc, {
-        startY: yPos,
-        head: [['NO', 'LOT NO', 'GARMENT TYPE', 'SHADE', 'QTY', 'RATE', 'AMOUNT']],
-        body: karigarTableBody,
-        theme: 'grid',
-        styles: { 
-          lineColor: [0, 0, 0], 
-          lineWidth: 0.2, 
-          textColor: [0, 0, 0], 
-          halign: 'center',
-          fontSize: 8,
-          cellPadding: 2
-        },
-        headStyles: { 
-          fillColor: [245, 245, 245], 
-          textColor: [0, 0, 0], 
-          fontStyle: 'bold',
-          lineWidth: 0.2
-        },
-        bodyStyles: (data) => {
-          if (data.row.index === karigarTableBody.length - 1) {
-            return {
-              fontStyle: 'bold',
-              fillColor: [240, 240, 240]
-            };
-          }
-          return {};
-        },
-        margin: { left: margin, right: margin },
-        columnStyles: {
-          0: { cellWidth: 12, halign: 'center' },
-          1: { cellWidth: 22, halign: 'center' },
-          2: { cellWidth: 38, halign: 'center' },
-          3: { cellWidth: 45, halign: 'center' },
-          4: { cellWidth: 22, halign: 'center' },
-          5: { cellWidth: 22, halign: 'center' },
-          6: { cellWidth: 33, halign: 'center' }
-        }
-      });
-      
-      yPos = doc.lastAutoTable.finalY + 8;
-      
-      if (kIdx < karigarWageArray.length - 1) {
-        doc.setDrawColor(200, 200, 200);
-        doc.setLineWidth(0.2);
-        doc.line(margin, yPos, pageWidth - margin, yPos);
-        yPos += 5;
-      }
-    }
-
-    const statsY = yPos + 5;
-    let currentStatsY = statsY;
-    
-    if (statsY + 25 > pageHeight - 35) {
-      doc.addPage();
-      currentStatsY = 20;
-    }
-    
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.2);
-    doc.rect(margin, currentStatsY, pageWidth - (margin * 2), 22);
-    
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
-    
-    const statsLeftX = margin + 5;
-    const statsRightX = pageWidth / 2 + 5;
-    
-    doc.text("Total Thekedar: " + selectedSupervisor, statsLeftX, currentStatsY + 6);
-    doc.text("Total Lots: " + selectedLotsData.length.toString(), statsLeftX, currentStatsY + 12);
-    doc.text("Total Karigars Paid: " + karigarWageArray.length.toString(), statsLeftX, currentStatsY + 18);
-    
-    const avgRate = grandTotalQuantity > 0 ? (grandTotalAmount / grandTotalQuantity).toFixed(2) : '0';
-    doc.text("Total Quantity: " + grandTotalQuantity + " pieces", statsRightX, currentStatsY + 6);
-    doc.text("Average Rate: Rs " + avgRate + " per piece", statsRightX, currentStatsY + 12);
-    doc.text("Payment Date: " + currentDate, statsRightX, currentStatsY + 18);
-
-    const footerY = pageHeight - 25;
-    doc.setLineWidth(0.4);
     doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
+    doc.text(recdSignText, rightMarginX - textWidth, yPos + 5);
     
-    doc.line(margin + 5, footerY, margin + 65, footerY);
-    doc.text("RECEIVER SIGNATURE", margin + 35, footerY + 5, { align: "center" });
-
-    doc.line(pageWidth - margin - 65, footerY, pageWidth - margin - 5, footerY);
-    doc.text("THEKEDAR SUPERVISOR", pageWidth - margin - 35, footerY + 5, { align: "center" });
-
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(7);
-      doc.setTextColor(100, 100, 100);
-      doc.text("Page " + i + " of " + pageCount, pageWidth / 2, pageHeight - 10, { align: "center" });
-      doc.text("MH Stitching - Thekedar Payment System", pageWidth / 2, pageHeight - 5, { align: "center" });
+    yPos += 12;
+    
+    if (kIdx < karigarWageArray.length - 1) {
+      doc.setDrawColor(150, 150, 150);
+      doc.setLineWidth(0.3);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 8;
     }
+  }
 
-    doc.save("Thekedar_Voucher_" + payableId + ".pdf");
-    
-    return payableId;
+  // ========== SIMPLIFIED PAYMENT SLIP PAGE ==========
+  doc.addPage();
+  yPos = 20;
+  
+  // Main page border
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+  
+  // 1. Header Titles
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("PAYMENT SLIP", pageWidth / 2, yPos, { align: "center" });
+  yPos += 7;
+  
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text("THEKEDAR / SUPERVISOR PAYMENT SLIP", pageWidth / 2, yPos, { align: "center" });
+  yPos += 10;
+  
+  // 2. Info Box Section
+  const infoBoxHeight = 25;
+  const infoBoxWidth = pageWidth - (margin * 2);
+  const splitPoint = infoBoxWidth * 0.6;
+
+  doc.setLineWidth(0.3);
+  doc.rect(margin, yPos, infoBoxWidth, infoBoxHeight);
+  doc.line(margin + splitPoint, yPos, margin + splitPoint, yPos + infoBoxHeight);
+
+  // Left Side Details
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.text("VCH NO:", margin + 5, yPos + 7);
+  doc.setFont("helvetica", "normal");
+  doc.text(payableId, margin + 25, yPos + 7);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("DATE:", margin + 5, yPos + 13);
+  doc.setFont("helvetica", "normal");
+  doc.text(currentDate, margin + 25, yPos + 13);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("PAYEE NAME:", margin + 5, yPos + 19);
+  doc.setFont("helvetica", "normal");
+  doc.text(payableData.payeeName || '', margin + 35, yPos + 19);
+
+  // Right Side Amount Box
+  doc.setFont("helvetica", "bold");
+  doc.text("AMOUNT", margin + splitPoint + (infoBoxWidth - splitPoint) / 2, yPos + 6, { align: "center" });
+  
+  const innerBoxW = (infoBoxWidth - splitPoint) - 10;
+  doc.rect(margin + splitPoint + 5, yPos + 8, innerBoxW, 12);
+  doc.setFontSize(11);
+  doc.text("Rs. " + formatNumber(payableData.amount), margin + splitPoint + (infoBoxWidth - splitPoint) / 2, yPos + 16, { align: "center" });
+
+  yPos += infoBoxHeight + 10;
+  
+  // 3. LOT SUMMARY Table
+  const paymentSlipLotBody = selectedLotsData.map((lot, idx) => [
+    (idx + 1).toString(),
+    lot.lotNumber || '',
+    lot.garmentType || '',
+    lot.totalQuantity.toString(),
+    lot.rate.toFixed(2),
+    formatNumber(lot.totalAmount)
+  ]);
+  
+  paymentSlipLotBody.push([
+    '', '', 'TOTAL', 
+    grandTotalQuantity.toString(), 
+    '', 
+    formatNumber(grandTotalAmount)
+  ]);
+  
+  autoTable(doc, {
+    startY: yPos,
+    head: [['NO', 'LOT NUMBER', 'GARMENT TYPE', 'QTY', 'RATE', 'AMOUNT']],
+    body: paymentSlipLotBody,
+    theme: 'grid',
+    styles: { 
+      lineColor: [0, 0, 0], 
+      lineWidth: 0.2, 
+      textColor: [0, 0, 0], 
+      halign: 'center',
+      fontSize: 9,
+      cellPadding: 1.5
+    },
+    headStyles: { 
+      fillColor: [240, 240, 240], 
+      textColor: [0, 0, 0], 
+      fontStyle: 'bold'
+    },
+    bodyStyles: (data) => {
+      if (data.row.index === paymentSlipLotBody.length - 1) {
+        return { 
+          fontStyle: 'bold', 
+          fillColor: [240, 240, 240]
+        };
+      }
+      return {};
+    },
+    margin: { left: margin, right: margin }
+  });
+  
+  yPos = doc.lastAutoTable.finalY + 15;
+
+  // 4. Triple Signature Footer
+  const sigWidth = (pageWidth - (margin * 2) - 20) / 3;
+  const sigY = pageHeight - 35;
+
+  const drawSig = (x, label) => {
+    doc.line(x, sigY, x + sigWidth, sigY);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(label, x + (sigWidth / 2), sigY + 5, { align: "center" });
   };
 
+  drawSig(margin, "VERIFICATION (CHECKED)");
+  drawSig(margin + sigWidth + 10, "MOHIT SIR");
+  drawSig(margin + (sigWidth * 2) + 20, "SAHIL SIR");
+
+  // Page numbering logic
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setTextColor(100, 100, 100);
+    doc.text("Page " + i + " of " + pageCount, pageWidth / 2, pageHeight - 8, { align: "center" });
+  }
+  doc.save("Thekedar_Voucher_" + payableId + ".pdf");
+  
+  return payableId;
+};
   const submitPayable = async (e) => {
     e.preventDefault();
     setSubmitting(true);

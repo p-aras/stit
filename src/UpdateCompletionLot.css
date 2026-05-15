@@ -486,6 +486,142 @@
   transition: all 0.2s;
   border: 1px solid #001224;
 }
+/* Back Button Styles */
+.ucl-back-button-container {
+  padding: 16px 24px 0 24px;
+  margin-bottom: -8px;
+}
+
+.ucl-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #1e293b;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.ucl-back-button:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  transform: translateX(-2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.ucl-back-button:active {
+  transform: translateX(-1px);
+}
+
+/* Completion Status Filter Styles */
+.ucl-status-filter-container {
+  padding: 20px 24px 0 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.ucl-status-chips {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  margin-bottom: 20px;
+}
+
+.ucl-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 40px;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ucl-status-chip:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+.ucl-status-chip.active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: white;
+}
+
+.ucl-status-chip.pending.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+}
+
+.ucl-status-chip.partial.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.ucl-status-chip.completed.active {
+  background: #10b981;
+  border-color: #10b981;
+}
+
+.ucl-status-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ucl-status-chip.active .ucl-status-count {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+/* Footer Active Filter Badge */
+.ucl-active-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  margin-left: 12px;
+  background: #e0e7ff;
+  color: #4f46e5;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .ucl-status-chips {
+    gap: 8px;
+  }
+  
+  .ucl-status-chip {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  
+  .ucl-back-button {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
 
 .ucl-table-row:hover {
   background-color: #ffffff;

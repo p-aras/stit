@@ -817,6 +817,9 @@ const clearHistory = () => {
       message: `✅ Selected supervisor: ${supervisor.name} (${supervisor.type})` 
     });
   };
+  const handleGoBack = () => {
+  window.history.back();
+};
 
   // Handle view details button click
   const handleViewDetails = () => {
@@ -1442,15 +1445,23 @@ const handleSave = async () => {
   return (
     <div style={styles.container}>
       {/* Compact Header */}
-      <div style={styles.compactHeader}>
-        <div style={styles.headerLeft}>
-          <div style={styles.logoIcon}>🎨</div>
-          <div>
-            <h1 style={styles.compactTitle}>
-              <span style={styles.titleHighlight}>Karigar</span> Assignment
-            </h1>
-            <p style={styles.compactSubtitle}>Assign multiple karigars per shade with split quantities</p>
-          </div>
+   <div style={styles.compactHeader}>
+  <div style={styles.headerLeft}>
+    <button 
+      onClick={handleGoBack}
+      style={styles.backButton}
+      title="Go Back"
+    >
+      <span style={styles.backButtonIcon}>←</span>
+      Back
+    </button>
+    <div style={styles.logoIcon}>🎨</div>
+    <div>
+      <h1 style={styles.compactTitle}>
+        <span style={styles.titleHighlight}>Karigar</span> Assignment
+      </h1>
+      <p style={styles.compactSubtitle}>Assign multiple karigars per shade with split quantities</p>
+    </div>
         </div>
         <div style={styles.headerRight}>
           <div style={styles.headerStats}>
@@ -3262,6 +3273,25 @@ const styles = {
     cursor: 'pointer',
     color: '#92400e',
   },
+  backButton: {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '10px 20px',
+  backgroundColor: '#f1f5f9',
+  color: '#1e293b',
+  border: '1px solid #e2e8f0',
+  borderRadius: '40px',
+  fontSize: '14px',
+  fontWeight: '600',
+  cursor: 'pointer',
+  transition: 'all 0.2s ease',
+  fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+},
+backButtonIcon: {
+  fontSize: '18px',
+  fontWeight: 'bold',
+},
   shadesGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',

@@ -17,6 +17,9 @@ const UpdateCompletionLot = () => {
   const [sortBy, setSortBy] = useState('lotNumber');
   const [sortOrder, setSortOrder] = useState('asc');
   const [isExporting, setIsExporting] = useState(false);
+  
+  // New state for completion filter
+  const [completionFilter, setCompletionFilter] = useState('pending'); // 'all', 'completed', 'pending', 'partial'
 
   // Google Sheets API configuration
   const API_KEY = 'AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk';
@@ -26,6 +29,16 @@ const UpdateCompletionLot = () => {
   const RANGE = 'KarigarAssignments!A:Q';
   
   const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzreKvgqQ_o_Dr7TjGjqatwX8L76xliQKJJKfJx3c_dv404ZLKQ_wsYJmt6062dl8aj/exec';
+
+  // Navigation back function
+  const handleGoBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      // Fallback: You can redirect to a specific URL like dashboard
+      window.location.href = '/'; // Adjust this to your actual home/dashboard route
+    }
+  };
 
   useEffect(() => {
     fetchSheetData();
@@ -546,8 +559,15 @@ const UpdateCompletionLot = () => {
     }
   };
 
+  const getLotStatus = (lot) => {
+    if (lot.allShadesCompleted) return 'completed';
+    if (lot.completedShades === 0) return 'pending';
+    return 'partial';
+  };
+
   const getSortedLots = () => {
     let filtered = lotsData.filter(lot => {
+      // Filter by supervisor
       if (selectedSupervisor) {
         const normalizedSupervisor = lot.supervisor
           ?.toLowerCase()
@@ -560,6 +580,13 @@ const UpdateCompletionLot = () => {
         if (normalizedSupervisor !== selectedSupervisor) return false;
       }
       
+      // Filter by completion status
+      if (completionFilter !== 'all') {
+        const lotStatus = getLotStatus(lot);
+        if (lotStatus !== completionFilter) return false;
+      }
+      
+      // Filter by search text
       if (!filterText) return true;
       
       const searchLower = filterText.toLowerCase();
@@ -621,6 +648,7 @@ const UpdateCompletionLot = () => {
           <p style="color: #64748b; margin-top: 10px;">Generated on: ${new Date().toLocaleString()}</p>
           ${selectedSupervisor ? `<p style="color: #4f46e5;">Filtered by Supervisor: ${selectedSupervisor}</p>` : ''}
           ${filterText ? `<p style="color: #4f46e5;">Search: ${filterText}</p>` : ''}
+          ${completionFilter !== 'all' ? `<p style="color: #4f46e5;">Status Filter: ${completionFilter.charAt(0).toUpperCase() + completionFilter.slice(1)}</p>` : ''}
         </div>
       `;
       exportContainer.appendChild(header);
@@ -795,6 +823,11 @@ const UpdateCompletionLot = () => {
     (total, shadeSet) => total + shadeSet.size, 0
   );
 
+  // Calculate counts for status badges
+  const pendingLotsCount = lotsData.filter(lot => !lot.allShadesCompleted && lot.completedShades === 0).length;
+  const partialLotsCount = lotsData.filter(lot => !lot.allShadesCompleted && lot.completedShades > 0).length;
+  const completedLotsCount = lotsData.filter(lot => lot.allShadesCompleted).length;
+
   const displayedSupervisors = showAllSupervisors ? supervisors : supervisors.slice(0, 8);
 
   if (loading) {
@@ -826,6 +859,9 @@ const UpdateCompletionLot = () => {
   return (
     <div className="ucl-update-completion-lot">
       <div className="ucl-main-card">
+        {/* Back Button Row */}
+       
+
         {/* Modern Gradient Header */}
         <div className="ucl-modern-header">
           <div className="ucl-header-background">
@@ -862,6 +898,51 @@ const UpdateCompletionLot = () => {
                 <div className="ucl-stat-label">Selected</div>
               </div>
             </div>
+          </div>
+        </div>
+        
+
+        {/* Completion Status Filter */}
+        <div className="ucl-status-filter-container">
+          <div className="ucl-filter-header">
+            <h3>Filter by Completion Status</h3>
+          </div>
+          <div className="ucl-status-chips">
+              <button onClick={handleGoBack} className="ucl-back-button">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Back
+          </button>
+            <button 
+              className={`ucl-status-chip ${completionFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setCompletionFilter('all')}
+            >
+              All Lots
+              <span className="ucl-status-count">{lotsData.length}</span>
+            </button>
+            <button 
+              className={`ucl-status-chip pending ${completionFilter === 'pending' ? 'active' : ''}`}
+              onClick={() => setCompletionFilter('pending')}
+            >
+              ⏳ Pending
+              <span className="ucl-status-count">{pendingLotsCount}</span>
+            </button>
+            <button 
+              className={`ucl-status-chip partial ${completionFilter === 'partial' ? 'active' : ''}`}
+              onClick={() => setCompletionFilter('partial')}
+            >
+              🔄 Partial Complete
+              <span className="ucl-status-count">{partialLotsCount}</span>
+            </button>
+            <button 
+              className={`ucl-status-chip completed ${completionFilter === 'completed' ? 'active' : ''}`}
+              onClick={() => setCompletionFilter('completed')}
+            >
+              ✓ Completed
+              <span className="ucl-status-count">{completedLotsCount}</span>
+            </button>
+           
           </div>
         </div>
 
@@ -1237,6 +1318,11 @@ const UpdateCompletionLot = () => {
         <div className="ucl-footer-modern">
           <div className="ucl-footer-stats">
             Showing {filteredLots.length} of {lotsData.length} lots
+            {completionFilter !== 'all' && (
+              <span className="ucl-active-filter-badge">
+                Filter: {completionFilter === 'pending' ? 'Pending' : completionFilter === 'partial' ? 'Partial Complete' : 'Completed'}
+              </span>
+            )}
           </div>
           <button 
             className="ucl-refresh-btn"
