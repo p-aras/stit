@@ -1,17 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import './UpdateCompletionLot.css';
 
-const UpdateCompletionLot = () => {
+const UpdateCompletionLot = ({ user, onBack }) => {
   const [lotsData, setLotsData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedShades, setSelectedShades] = useState(new Map());
   const [updateStatus, setUpdateStatus] = useState('');
   const [filterText, setFilterText] = useState('');
-  const [supervisors, setSupervisors] = useState([]);
-  const [selectedSupervisor, setSelectedSupervisor] = useState('');
-  const [loadingSupervisors, setLoadingSupervisors] = useState(false);
-  const [showAllSupervisors, setShowAllSupervisors] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [expandedLots, setExpandedLots] = useState(new Set());
   const [sortBy, setSortBy] = useState('lotNumber');
@@ -21,28 +17,36 @@ const UpdateCompletionLot = () => {
   // New state for completion filter
   const [completionFilter, setCompletionFilter] = useState('pending'); // 'all', 'completed', 'pending', 'partial'
 
+  // Get logged-in user's name for filtering
+  const loggedInUser = user?.name || '';
+  const normalizedLoggedInUser = loggedInUser.toLowerCase().trim();
+
   // Google Sheets API configuration
   const API_KEY = 'AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk';
   const SPREADSHEET_ID = '17qqixpHOXvG1U3RlRwaHON5JCkugpy4RIu5N9zR9ScM';
-  const KARIGAR_SPREADSHEET_ID = '17qqixpHOXvG1U3RlRwaHON5JCkugpy4RIu5N9zR9ScM';
-  const KARIGAR_SHEET_NAME = 'KarigarProfiles';
   const RANGE = 'KarigarAssignments!A:Q';
   
   const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzreKvgqQ_o_Dr7TjGjqatwX8L76xliQKJJKfJx3c_dv404ZLKQ_wsYJmt6062dl8aj/exec';
 
+  // Helper function for name normalization (case-insensitive)
+  const normalizeName = (name) => {
+    if (!name) return '';
+    return name.toString().toLowerCase().trim();
+  };
+
   // Navigation back function
   const handleGoBack = () => {
-    if (window.history.length > 1) {
+    if (onBack) {
+      onBack();
+    } else if (window.history.length > 1) {
       window.history.back();
     } else {
-      // Fallback: You can redirect to a specific URL like dashboard
-      window.location.href = '/'; // Adjust this to your actual home/dashboard route
+      window.location.href = '/';
     }
   };
 
   useEffect(() => {
     fetchSheetData();
-    fetchSupervisors();
   }, []);
 
   // Parse assignments JSON supporting multiple karigars per shade
@@ -193,73 +197,6 @@ const UpdateCompletionLot = () => {
     }
   };
 
-  const fetchSupervisors = async () => {
-    setLoadingSupervisors(true);
-    try {
-      const sheetNameEncoded = encodeURIComponent(KARIGAR_SHEET_NAME);
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${KARIGAR_SPREADSHEET_ID}/values/${sheetNameEncoded}?key=${API_KEY}`;
-      const response = await fetch(url);
-      
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-      
-      const data = await response.json();
-      
-      if (data.values && data.values.length > 0) {
-        const headers = data.values[0];
-        const supervisorNameIndex = headers.findIndex(h => 
-          h.toLowerCase().includes('supervisor name') || 
-          h.toLowerCase() === 'supervisor' ||
-          h.toLowerCase() === 'thekedar'
-        );
-        
-        const supervisorTypeIndex = headers.findIndex(h => 
-          h.toLowerCase().includes('supervisor type') || 
-          h.toLowerCase() === 'type'
-        );
-        
-        if (supervisorNameIndex === -1) {
-          throw new Error('Supervisor Name column not found in sheet');
-        }
-        
-        const supervisorMap = new Map();
-        
-        data.values.slice(1).forEach(row => {
-          const rawSupervisorName = row[supervisorNameIndex]?.trim() || '';
-          const supervisorType = supervisorTypeIndex !== -1 ? row[supervisorTypeIndex]?.trim() : '';
-          
-          if (rawSupervisorName && rawSupervisorName !== '') {
-            const normalizedName = rawSupervisorName
-              .toLowerCase()
-              .split(' ')
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-              .join(' ')
-              .replace(/\s+/g, ' ')
-              .trim();
-            
-            if (!supervisorMap.has(normalizedName)) {
-              supervisorMap.set(normalizedName, {
-                name: normalizedName,
-                originalName: rawSupervisorName,
-                type: supervisorType || 'Supervisor',
-                initial: normalizedName.charAt(0)
-              });
-            }
-          }
-        });
-        
-        const uniqueSupervisors = Array.from(supervisorMap.values())
-          .sort((a, b) => a.name.localeCompare(b.name));
-        
-        setSupervisors(uniqueSupervisors);
-      }
-    } catch (err) {
-      console.error('Error fetching supervisors:', err);
-      setUpdateStatus(`Error fetching supervisors: ${err.message}`);
-    } finally {
-      setLoadingSupervisors(false);
-    }
-  };
-
   // Updated: Mark entire shade as completed (all karigars)
   const updateShadeStatus = async (updates) => {
     try {
@@ -281,7 +218,7 @@ const UpdateCompletionLot = () => {
         completionDateTime: completionDateTime
       }));
 
-      const response = await fetch(APP_SCRIPT_URL, {
+      await fetch(APP_SCRIPT_URL, {
         method: 'POST',
         mode: 'no-cors',
         headers: {
@@ -372,12 +309,10 @@ const UpdateCompletionLot = () => {
           shadeIds.forEach(shadeId => {
             const shade = lot.shades.find(s => s.id === shadeId);
             if (shade && !shade.completed) {
-              // Mark entire shade as completed (all karigars)
               updates.push({
                 lotNumber: lot.lotNumber,
                 shadeName: shade.shadeName,
                 status: 'Completed'
-                // No karigarId - this will mark all karigars in this shade
               });
             }
           });
@@ -398,7 +333,6 @@ const UpdateCompletionLot = () => {
           const selectedShadeIds = updatedSelections.get(lot.id);
           const updatedShades = lot.shades.map(shade => {
             if (selectedShadeIds.has(shade.id) && !shade.completed) {
-              // Mark all karigars in this shade as completed
               const updatedKarigars = shade.karigars.map(karigar => ({
                 ...karigar,
                 status: 'Completed',
@@ -435,7 +369,6 @@ const UpdateCompletionLot = () => {
       setUpdateStatus(`✅ Successfully marked ${updates.length} shade(s) as completed!`);
       setSelectedShades(new Map());
       
-      // Refresh data after 2 seconds
       setTimeout(() => {
         fetchSheetData();
       }, 2000);
@@ -469,7 +402,6 @@ const UpdateCompletionLot = () => {
       
       await updateShadeStatus(updates);
       
-      // Update local state
       const updatedLotsData = lotsData.map(l => {
         if (l.id === lotId) {
           const updatedShades = l.shades.map(s => {
@@ -509,7 +441,6 @@ const UpdateCompletionLot = () => {
       setLotsData(updatedLotsData);
       setUpdateStatus(`✅ Successfully marked shade "${shade.shadeName}" as completed!`);
       
-      // Remove from selection if present
       if (selectedShades.has(lotId)) {
         const newSelected = new Map(selectedShades);
         const lotShades = newSelected.get(lotId);
@@ -522,7 +453,6 @@ const UpdateCompletionLot = () => {
         setSelectedShades(newSelected);
       }
       
-      // Refresh data after 2 seconds
       setTimeout(() => {
         fetchSheetData();
       }, 2000);
@@ -533,21 +463,6 @@ const UpdateCompletionLot = () => {
     } finally {
       setIsUpdating(false);
     }
-  };
-
-  const handleSupervisorSelect = (supervisor) => {
-    setSelectedSupervisor(supervisor.name);
-    setShowAllSupervisors(false);
-    setUpdateStatus(`Filtering by supervisor: ${supervisor.name}`);
-  };
-
-  const clearSupervisorFilter = () => {
-    setSelectedSupervisor('');
-    setUpdateStatus('');
-  };
-
-  const getInitials = (name) => {
-    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
 
   const handleSort = (column) => {
@@ -565,28 +480,19 @@ const UpdateCompletionLot = () => {
     return 'partial';
   };
 
-  const getSortedLots = () => {
+  // Filter lots by logged-in user (supervisor)
+  const getFilteredLots = () => {
     let filtered = lotsData.filter(lot => {
-      // Filter by supervisor
-      if (selectedSupervisor) {
-        const normalizedSupervisor = lot.supervisor
-          ?.toLowerCase()
-          .split(' ')
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-        
-        if (normalizedSupervisor !== selectedSupervisor) return false;
-      }
+      const normalizedSupervisor = normalizeName(lot.supervisor);
+      const isAuthorized = normalizedSupervisor === normalizedLoggedInUser;
       
-      // Filter by completion status
+      if (!isAuthorized) return false;
+      
       if (completionFilter !== 'all') {
         const lotStatus = getLotStatus(lot);
         if (lotStatus !== completionFilter) return false;
       }
       
-      // Filter by search text
       if (!filterText) return true;
       
       const searchLower = filterText.toLowerCase();
@@ -608,7 +514,6 @@ const UpdateCompletionLot = () => {
       );
     });
 
-    // Apply sorting
     filtered.sort((a, b) => {
       let comparison = 0;
       switch(sortBy) {
@@ -618,7 +523,7 @@ const UpdateCompletionLot = () => {
           comparison = aPercent - bPercent;
           break;
         case 'supervisor':
-          comparison = a.supervisor.localeCompare(b.supervisor);
+          comparison = normalizeName(a.supervisor).localeCompare(normalizeName(b.supervisor));
           break;
         default:
           comparison = a.lotNumber.localeCompare(b.lotNumber);
@@ -646,7 +551,7 @@ const UpdateCompletionLot = () => {
         <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #667eea;">
           <h1 style="color: #1e293b; margin: 0;">Shade Completion Report</h1>
           <p style="color: #64748b; margin-top: 10px;">Generated on: ${new Date().toLocaleString()}</p>
-          ${selectedSupervisor ? `<p style="color: #4f46e5;">Filtered by Supervisor: ${selectedSupervisor}</p>` : ''}
+          <p style="color: #4f46e5;">Supervisor: ${loggedInUser}</p>
           ${filterText ? `<p style="color: #4f46e5;">Search: ${filterText}</p>` : ''}
           ${completionFilter !== 'all' ? `<p style="color: #4f46e5;">Status Filter: ${completionFilter.charAt(0).toUpperCase() + completionFilter.slice(1)}</p>` : ''}
         </div>
@@ -663,7 +568,7 @@ const UpdateCompletionLot = () => {
       headerRow.style.backgroundColor = '#f1f5f9';
       headerRow.style.borderBottom = '2px solid #e2e8f0';
       
-      const headers = ['Lot Number', 'Brand', 'Fabric', 'Garment Type', 'Party Name', 'Supervisor', 'Shades', 'Completion %', 'Status'];
+      const headers = ['Lot Number', 'Brand', 'Fabric', 'Garment Type', 'Party Name', 'Shades', 'Completion %', 'Status'];
       headers.forEach(headerText => {
         const th = document.createElement('th');
         th.textContent = headerText;
@@ -690,7 +595,6 @@ const UpdateCompletionLot = () => {
           lot.fabric || '-',
           lot.garmentType || '-',
           lot.partyName || '-',
-          lot.supervisor || '-',
           `${lot.completedShades}/${lot.totalShades}`,
           `${Math.round(completionPercentage)}%`,
           lot.allShadesCompleted ? 'Completed' : 'In Progress'
@@ -715,11 +619,10 @@ const UpdateCompletionLot = () => {
         
         tbody.appendChild(row);
         
-        // Add shade details with karigars
         if (lot.shades.length > 0) {
           const shadeDetailRow = document.createElement('tr');
           const shadeDetailCell = document.createElement('td');
-          shadeDetailCell.colSpan = 9;
+          shadeDetailCell.colSpan = 8;
           shadeDetailCell.style.padding = '12px';
           shadeDetailCell.style.backgroundColor = '#f8fafc';
           
@@ -747,7 +650,6 @@ const UpdateCompletionLot = () => {
             const shadeRow = document.createElement('tr');
             shadeRow.style.borderBottom = '1px solid #e2e8f0';
             
-            // Karigars list as string
             const karigarsList = shade.karigars.map(k => `${k.karigarName || k.karigarId} (${k.pcs} pcs)`).join(', ');
             
             const shadeData = [
@@ -794,13 +696,13 @@ const UpdateCompletionLot = () => {
       footer.style.color = '#64748b';
       footer.innerHTML = `
         <p><strong>Summary:</strong> ${filteredLots.length} Lots | Total Shades: ${filteredLots.reduce((sum, lot) => sum + lot.totalShades, 0)} | Completed Shades: ${filteredLots.reduce((sum, lot) => sum + lot.completedShades, 0)}</p>
-        <p style="font-size: 0.85rem;">Generated by Shade Completion Manager</p>
+        <p style="font-size: 0.85rem;">Generated by Shade Completion Manager for Supervisor: ${loggedInUser}</p>
       `;
       exportContainer.appendChild(footer);
       
       const opt = {
         margin: [0.5, 0.5, 0.5, 0.5],
-        filename: `shade-completion-report-${new Date().toISOString().split('T')[0]}.pdf`,
+        filename: `shade-completion-report-${loggedInUser}-${new Date().toISOString().split('T')[0]}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, letterRendering: true },
         jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
@@ -818,17 +720,16 @@ const UpdateCompletionLot = () => {
     }
   };
 
-  const filteredLots = getSortedLots();
+  const filteredLots = getFilteredLots();
   const totalSelectedShades = Array.from(selectedShades.values()).reduce(
     (total, shadeSet) => total + shadeSet.size, 0
   );
 
-  // Calculate counts for status badges
-  const pendingLotsCount = lotsData.filter(lot => !lot.allShadesCompleted && lot.completedShades === 0).length;
-  const partialLotsCount = lotsData.filter(lot => !lot.allShadesCompleted && lot.completedShades > 0).length;
-  const completedLotsCount = lotsData.filter(lot => lot.allShadesCompleted).length;
+  const pendingLotsCount = filteredLots.filter(lot => !lot.allShadesCompleted && lot.completedShades === 0).length;
+  const partialLotsCount = filteredLots.filter(lot => !lot.allShadesCompleted && lot.completedShades > 0).length;
+  const completedLotsCount = filteredLots.filter(lot => lot.allShadesCompleted).length;
 
-  const displayedSupervisors = showAllSupervisors ? supervisors : supervisors.slice(0, 8);
+  const displayName = loggedInUser || 'Supervisor';
 
   if (loading) {
     return (
@@ -859,9 +760,6 @@ const UpdateCompletionLot = () => {
   return (
     <div className="ucl-update-completion-lot">
       <div className="ucl-main-card">
-        {/* Back Button Row */}
-       
-
         {/* Modern Gradient Header */}
         <div className="ucl-modern-header">
           <div className="ucl-header-background">
@@ -869,6 +767,12 @@ const UpdateCompletionLot = () => {
           </div>
           <div className="ucl-header-content-modern">
             <div className="ucl-header-left">
+              <button onClick={handleGoBack} className="ucl-back-button">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Back
+              </button>
               <div className="ucl-header-icon">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M20 7L12 12L4 7M12 22V12M20 12V16L12 21L4 16V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -877,20 +781,20 @@ const UpdateCompletionLot = () => {
               </div>
               <div className="ucl-header-title">
                 <h1>Shade Completion Manager</h1>
-                <p>Complete entire shades - marks all karigars assigned to that shade automatically</p>
+                <p>Welcome, {displayName} - Complete entire shades assigned to you</p>
               </div>
             </div>
             <div className="ucl-header-stats">
               <div className="ucl-stat-card">
-                <div className="ucl-stat-value">{lotsData.length}</div>
-                <div className="ucl-stat-label">Active Lots</div>
+                <div className="ucl-stat-value">{filteredLots.length}</div>
+                <div className="ucl-stat-label">Your Lots</div>
               </div>
               <div className="ucl-stat-card">
-                <div className="ucl-stat-value">{lotsData.reduce((sum, lot) => sum + lot.totalShades, 0)}</div>
+                <div className="ucl-stat-value">{filteredLots.reduce((sum, lot) => sum + lot.totalShades, 0)}</div>
                 <div className="ucl-stat-label">Total Shades</div>
               </div>
               <div className="ucl-stat-card">
-                <div className="ucl-stat-value">{lotsData.reduce((sum, lot) => sum + lot.completedShades, 0)}</div>
+                <div className="ucl-stat-value">{filteredLots.reduce((sum, lot) => sum + lot.completedShades, 0)}</div>
                 <div className="ucl-stat-label">Completed</div>
               </div>
               <div className="ucl-stat-card">
@@ -900,7 +804,6 @@ const UpdateCompletionLot = () => {
             </div>
           </div>
         </div>
-        
 
         {/* Completion Status Filter */}
         <div className="ucl-status-filter-container">
@@ -908,18 +811,12 @@ const UpdateCompletionLot = () => {
             <h3>Filter by Completion Status</h3>
           </div>
           <div className="ucl-status-chips">
-              <button onClick={handleGoBack} className="ucl-back-button">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            Back
-          </button>
             <button 
               className={`ucl-status-chip ${completionFilter === 'all' ? 'active' : ''}`}
               onClick={() => setCompletionFilter('all')}
             >
               All Lots
-              <span className="ucl-status-count">{lotsData.length}</span>
+              <span className="ucl-status-count">{filteredLots.length}</span>
             </button>
             <button 
               className={`ucl-status-chip pending ${completionFilter === 'pending' ? 'active' : ''}`}
@@ -942,7 +839,6 @@ const UpdateCompletionLot = () => {
               ✓ Completed
               <span className="ucl-status-count">{completedLotsCount}</span>
             </button>
-           
           </div>
         </div>
 
@@ -1005,38 +901,14 @@ const UpdateCompletionLot = () => {
           </div>
         </div>
 
-        {/* Supervisor Filter */}
-        <div className="ucl-supervisor-filter">
-          <div className="ucl-filter-header">
-            <h3>Filter by Supervisor</h3>
-            <span className="ucl-supervisor-count">{supervisors.length} available</span>
-          </div>
-          
-          <div className="ucl-supervisor-chips">
-            <button 
-              className={`ucl-supervisor-chip ${!selectedSupervisor ? 'active' : ''}`}
-              onClick={clearSupervisorFilter}
-            >
-              All Supervisors
-            </button>
-            {displayedSupervisors.map((supervisor) => (
-              <button
-                key={supervisor.name}
-                className={`ucl-supervisor-chip ${selectedSupervisor === supervisor.name ? 'active' : ''}`}
-                onClick={() => handleSupervisorSelect(supervisor)}
-              >
-                <span className="ucl-chip-avatar">{getInitials(supervisor.name)}</span>
-                {supervisor.name}
-              </button>
-            ))}
-            {!showAllSupervisors && supervisors.length > 8 && (
-              <button 
-                className="ucl-supervisor-chip ucl-show-more"
-                onClick={() => setShowAllSupervisors(true)}
-              >
-                +{supervisors.length - 8} more
-              </button>
-            )}
+        {/* Welcome Banner for Supervisor */}
+        <div className="ucl-welcome-banner">
+          <div className="ucl-welcome-content">
+            <span className="ucl-welcome-icon">👋</span>
+            <div>
+              <strong>Working as: {displayName}</strong>
+              <span className="ucl-welcome-note">You can only see and complete shades for lots assigned to you.</span>
+            </div>
           </div>
         </div>
 
@@ -1097,8 +969,8 @@ const UpdateCompletionLot = () => {
                   <path d="M9 12H15M12 9V15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
               </div>
-              <h3>No lots found</h3>
-              <p>{selectedSupervisor ? `No lots assigned to ${selectedSupervisor}` : 'Try adjusting your search or filter'}</p>
+              <h3>No lots found for {displayName}</h3>
+              <p>You don't have any lots assigned to you at this moment.</p>
             </div>
           ) : (
             <table className="ucl-data-table">
@@ -1133,7 +1005,6 @@ const UpdateCompletionLot = () => {
                   
                   return (
                     <React.Fragment key={lot.id}>
-                      {/* Main Lot Row */}
                       <tr className={`ucl-table-row ${lot.allShadesCompleted ? 'completed-lot' : ''}`}>
                         <td className="ucl-table-expand-cell">
                           <button 
@@ -1208,7 +1079,6 @@ const UpdateCompletionLot = () => {
                         </td>
                       </tr>
                       
-                      {/* Expanded Shades Sub-table */}
                       {isExpanded && (
                         <tr className="ucl-expanded-row">
                           <td colSpan="11">
@@ -1236,9 +1106,6 @@ const UpdateCompletionLot = () => {
                                 <tbody>
                                   {lot.shades.map((shade) => {
                                     const isSelected = lotSelectedShades.has(shade.id);
-                                    const karigarsList = shade.karigars.map(k => 
-                                      `${k.karigarName || k.karigarId} (${k.pcs} pcs)`
-                                    ).join(', ');
                                     
                                     return (
                                       <tr key={shade.id} className={`ucl-shade-row ${shade.completed ? 'completed-shade' : ''}`}>
@@ -1317,7 +1184,7 @@ const UpdateCompletionLot = () => {
         {/* Footer */}
         <div className="ucl-footer-modern">
           <div className="ucl-footer-stats">
-            Showing {filteredLots.length} of {lotsData.length} lots
+            Showing {filteredLots.length} of {filteredLots.length} lots assigned to {displayName}
             {completionFilter !== 'all' && (
               <span className="ucl-active-filter-badge">
                 Filter: {completionFilter === 'pending' ? 'Pending' : completionFilter === 'partial' ? 'Partial Complete' : 'Completed'}

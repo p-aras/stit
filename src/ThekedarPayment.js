@@ -3,6 +3,18 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import './ThekedarPayment.css';
 
+// Helper function for name normalization
+const normalizeName = (name) => {
+  if (!name) return '';
+  return name.toString().toLowerCase().trim();
+};
+
+// Helper function for case-insensitive string comparison
+const isSameName = (name1, name2) => {
+  if (!name1 || !name2) return false;
+  return normalizeName(name1) === normalizeName(name2);
+};
+
 // Google Sheets configuration
 const GOOGLE_SHEETS_CONFIG = {
   API_KEY: "AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk",
@@ -37,8 +49,8 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
   const [rateList, setRateList] = useState([]);
   const [thekedarPayments, setThekedarPayments] = useState([]);
   
-  const [selectedSupervisor, setSelectedSupervisor] = useState('');
-  const [supervisors, setSupervisors] = useState([]);
+  // Use the logged-in supervisor directly - no selection dropdown
+  const selectedSupervisor = supervisor?.name || '';
   const [groupedLots, setGroupedLots] = useState([]);
   const [filteredLots, setFilteredLots] = useState([]);
   const [selectedLots, setSelectedLots] = useState([]);
@@ -55,6 +67,7 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
   const [showStorageSuccess, setShowStorageSuccess] = useState(false);
   const [error, setError] = useState('');
   const [debugInfo, setDebugInfo] = useState('');
+  const [authorized, setAuthorized] = useState(true);
 
   const [formData, setFormData] = useState({
     payableId: '',
@@ -74,10 +87,9 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
     updatedAt: new Date().toISOString()
   });
 
-  // Helper function for case-insensitive string comparison
-  const isSameSupervisor = (profileSupervisor, selectedSupervisor) => {
-    if (!profileSupervisor || !selectedSupervisor) return false;
-    return profileSupervisor.toString().toLowerCase().trim() === selectedSupervisor.toString().toLowerCase().trim();
+  // Helper function for case-insensitive supervisor comparison
+  const isSameSupervisor = (profileSupervisor, loggedInSupervisor) => {
+    return isSameName(profileSupervisor, loggedInSupervisor);
   };
 
   useEffect(() => {
@@ -91,6 +103,23 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
       loadKarigarAssignments();
     }
   }, [karigarProfiles]);
+
+  // Check if logged-in supervisor is authorized
+  useEffect(() => {
+    if (karigarProfiles.length > 0 && selectedSupervisor) {
+      const hasKarigars = karigarProfiles.some(profile => 
+        isSameSupervisor(profile.supervisorName, selectedSupervisor)
+      );
+      
+      if (!hasKarigars && karigarProfiles.length > 0) {
+        setAuthorized(false);
+        setError(`No authorization: "${selectedSupervisor}" is not registered as a supervisor in the system.`);
+      } else {
+        setAuthorized(true);
+        setError('');
+      }
+    }
+  }, [karigarProfiles, selectedSupervisor]);
 
   // Load Thekedar Payments to track already paid lots
   const loadThekedarPayments = async () => {
@@ -174,10 +203,6 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
         })).filter(p => p.karigarId && p.karigarName);
         
         setKarigarProfiles(profiles);
-        // Get unique supervisors (preserve original case for display)
-        const uniqueSupervisors = [...new Set(profiles.map(p => p.supervisorName))].filter(Boolean);
-        uniqueSupervisors.sort((a, b) => a.localeCompare(b));
-        setSupervisors(uniqueSupervisors);
       }
     } catch (err) {
       console.error('Error loading karigar profiles:', err);
@@ -275,8 +300,6 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
             })).filter(p => p.karigarId && p.karigarName);
             
             setKarigarProfiles(currentProfiles);
-            const uniqueSupervisors = [...new Set(currentProfiles.map(p => p.supervisorName))].filter(Boolean);
-            setSupervisors(uniqueSupervisors);
           }
         }
       }
@@ -326,7 +349,6 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
           }
           
           for (const [shade, shadeData] of Object.entries(assignmentsJson)) {
-            // Handle both new format (karigars array) and old format (single karigar)
             let karigarEntries = [];
             
             if (shadeData.karigars && Array.isArray(shadeData.karigars)) {
@@ -471,10 +493,10 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
     }
   };
   
-  // UPDATED: Case-insensitive supervisor filtering
+  // Filter assignments for logged-in supervisor only
   useEffect(() => {
     if (selectedSupervisor && karigarAssignments.length > 0 && lotCompletionMap.size > 0) {
-      // Find karigars under selected supervisor (CASE-INSENSITIVE)
+      // Find karigars under logged-in supervisor (CASE-INSENSITIVE)
       const karigarsUnderSupervisor = karigarProfiles
         .filter(profile => isSameSupervisor(profile.supervisorName, selectedSupervisor))
         .map(profile => profile.karigarId);
@@ -516,11 +538,13 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
             const karigarWageDetails = {};
             
             completedAssignments.forEach(a => {
-              if (!shadesByKarigar[a.karigarName]) {
-                shadesByKarigar[a.karigarName] = [];
-                karigarWageDetails[a.karigarName] = {
+              const normalizedKarigarName = normalizeName(a.karigarName);
+              
+              if (!shadesByKarigar[normalizedKarigarName]) {
+                shadesByKarigar[normalizedKarigarName] = [];
+                karigarWageDetails[normalizedKarigarName] = {
                   karigarId: a.karigarId,
-                  karigarName: a.karigarName,
+                  karigarName: a.karigarName, // Keep original for display
                   totalQuantity: 0,
                   totalAmount: 0,
                   lots: []
@@ -530,15 +554,15 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
               const quantity = a.completedQuantity || a.quantity;
               const amount = quantity * rate;
               
-              shadesByKarigar[a.karigarName].push({
+              shadesByKarigar[normalizedKarigarName].push({
                 shade: a.shade,
                 quantity: quantity,
                 amount: amount
               });
               
-              karigarWageDetails[a.karigarName].totalQuantity += quantity;
-              karigarWageDetails[a.karigarName].totalAmount += amount;
-              karigarWageDetails[a.karigarName].lots.push({
+              karigarWageDetails[normalizedKarigarName].totalQuantity += quantity;
+              karigarWageDetails[normalizedKarigarName].totalAmount += amount;
+              karigarWageDetails[normalizedKarigarName].lots.push({
                 lotNumber: lotNumber,
                 shade: a.shade,
                 quantity: quantity,
@@ -576,7 +600,7 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
       const totalQuantity = groupedLotsList.reduce((sum, lot) => sum + lot.totalQuantity, 0);
       const uniqueKarigars = new Set();
       groupedLotsList.forEach(lot => {
-        lot.assignments.forEach(a => uniqueKarigars.add(a.karigarName));
+        lot.assignments.forEach(a => uniqueKarigars.add(normalizeName(a.karigarName)));
       });
       
       const paidCount = Array.from(lotCompletionMap.values()).filter(lot => 
@@ -690,12 +714,6 @@ Available lots for payment: ${totalLots}`);
     const timestamp = Date.now();
     const random = Math.floor(Math.random() * 10000);
     return `${prefix}_${timestamp}_${random}`;
-  };
-
-  const handleSupervisorChange = (e) => {
-    setSelectedSupervisor(e.target.value);
-    setSearchQuery('');
-    setCurrentStep(2);
   };
 
   const handleSelectAllLots = () => {
@@ -974,365 +992,172 @@ Available lots for payment: ${totalLots}`);
     }
   };
 
-const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
-  const payableId = payableData.payableId || generatePayableId();
-  
-  const numberToWords = (num) => {
-    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-      'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
+    const payableId = payableData.payableId || generatePayableId();
     
-    const numToWords = (n) => {
-      if (n < 20) return ones[n];
-      if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '');
-      if (n < 1000) return ones[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' ' + numToWords(n%100) : '');
-      if (n < 100000) return numToWords(Math.floor(n/1000)) + ' Thousand' + (n%1000 ? ' ' + numToWords(n%1000) : '');
-      if (n < 10000000) return numToWords(Math.floor(n/100000)) + ' Lakh' + (n%100000 ? ' ' + numToWords(n%100000) : '');
-      return numToWords(Math.floor(n/10000000)) + ' Crore' + (n%10000000 ? ' ' + numToWords(n%10000000) : '');
-    };
-    
-    const whole = Math.floor(num);
-    const words = numToWords(whole);
-    return words;
-  };
-
-  const amountInWords = numberToWords(payableData.amount);
-  const supervisorName = selectedSupervisor || payableData.createdBy || 'Supervisor';
-  
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 8;
-  let yPos = 18;
-
-  const formatNumber = (num) => {
-    return parseFloat(num || 0).toLocaleString('en-IN');
-  };
-
-  const currentDate = new Date().toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-
-  const allKarigarWages = new Map();
-  
-  selectedLotsData.forEach(lot => {
-    if (lot.karigarWageDetails) {
-      Object.values(lot.karigarWageDetails).forEach(karigar => {
-        if (!allKarigarWages.has(karigar.karigarId)) {
-          allKarigarWages.set(karigar.karigarId, {
-            karigarId: karigar.karigarId,
-            karigarName: karigar.karigarName,
-            totalQuantity: 0,
-            totalAmount: 0,
-            supervisor: supervisorName,
-            lots: []
-          });
-        }
-        const existing = allKarigarWages.get(karigar.karigarId);
-        existing.totalQuantity += karigar.totalQuantity;
-        existing.totalAmount += karigar.totalAmount;
-        existing.lots.push(...karigar.lots);
-      });
-    }
-  });
-  
-  const karigarWageArray = Array.from(allKarigarWages.values()).sort((a, b) => 
-    a.karigarName.localeCompare(b.karigarName)
-  );
-  
-  // Calculate grand totals
-  const grandTotalQuantity = selectedLotsData.reduce((sum, lot) => sum + lot.totalQuantity, 0);
-  const grandTotalAmount = selectedLotsData.reduce((sum, lot) => sum + lot.totalAmount, 0);
-  
-  // Calculate karigar summary totals
-  const karigarTotalQuantity = karigarWageArray.reduce((sum, k) => sum + k.totalQuantity, 0);
-  const karigarTotalAmount = karigarWageArray.reduce((sum, k) => sum + k.totalAmount, 0);
-
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.4);
-  doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("PAYMENT VOUCHER", pageWidth / 2, yPos, { align: "center" });
-  
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text("THEKEDAR SUPERVISOR PAYMENT SLIP", pageWidth / 2, yPos + 6, { align: "center" });
-  
-  doc.setFont("helvetica", "bold");
-  doc.text("VOUCHER NUMBER: " + payableId, pageWidth - margin - 2, yPos, { align: "right" });
-
-  yPos += 12;
-
-  doc.setLineWidth(0.3);
-  doc.rect(margin, yPos, pageWidth - (margin * 2), 28);
-  doc.line(pageWidth / 2 + 5, yPos, pageWidth / 2 + 5, yPos + 28);
-
-  doc.setFontSize(9);
-  const leftX = margin + 3;
-  const rightX = pageWidth / 2 + 8;
-
-  doc.setFont("helvetica", "bold"); doc.text("DATE:", leftX, yPos + 6);
-  doc.setFont("helvetica", "normal"); doc.text(currentDate, leftX + 15, yPos + 6);
-  doc.setFont("helvetica", "bold"); doc.text("PAYEE:", leftX, yPos + 12);
-  doc.setFont("helvetica", "normal"); doc.text(payableData.payeeName || '', leftX + 18, yPos + 12);
-  doc.setFont("helvetica", "bold"); doc.text("CATEGORY:", leftX, yPos + 18);
-  doc.setFont("helvetica", "normal"); doc.text(payableData.category || '', leftX + 22, yPos + 18);
-  doc.setFont("helvetica", "bold"); doc.text("STATUS:", leftX, yPos + 24);
-  doc.setFont("helvetica", "normal"); doc.text(payableData.status || '', leftX + 18, yPos + 24);
-
-  doc.setFont("helvetica", "bold"); doc.text("DUE DATE:", rightX, yPos + 6);
-  doc.setFont("helvetica", "normal"); doc.text(new Date(payableData.dueDate).toLocaleDateString('en-IN'), rightX + 20, yPos + 6);
-  doc.setFont("helvetica", "bold"); doc.text("PAYEE ID:", rightX, yPos + 12);
-  doc.setFont("helvetica", "normal"); doc.text(payableData.payeeId || '', rightX + 20, yPos + 12);
-  doc.setFont("helvetica", "bold"); doc.text("TOTAL QTY:", rightX, yPos + 18);
-  doc.setFont("helvetica", "normal"); doc.text(Math.round(grandTotalQuantity).toString(), rightX + 22, yPos + 18);
-  doc.setFont("helvetica", "bold"); doc.text("THEKEDAR:", rightX, yPos + 24);
-  doc.setFont("helvetica", "normal"); doc.text(supervisorName, rightX + 22, yPos + 24);
-
-  yPos += 28;
-
-  doc.setLineWidth(0.3);
-  doc.rect(margin, yPos, pageWidth - (margin * 2), 10);
-  doc.setFont("helvetica", "bold");
-  doc.text("Amount in Words :", margin + 3, yPos + 6.5);
-  doc.setFont("helvetica", "normal");
-  doc.text(amountInWords + " Rupees Only", margin + 35, yPos + 6.5);
-
-  yPos += 20;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("LOT SUMMARY", margin, yPos);
-  yPos += 5;
-
-  const lotTableBody = selectedLotsData.map((lot, idx) => [
-    (idx + 1).toString(),
-    lot.lotNumber || '',
-    lot.brand || '',
-    lot.fabric || '',
-    lot.garmentType || '',
-    lot.karigarCount.toString(),
-    lot.totalQuantity.toString(),
-    lot.rate.toFixed(2),
-    formatNumber(lot.totalAmount)
-  ]);
-
-  // Add total row to LOT SUMMARY table
-  lotTableBody.push([
-    '',
-    '',
-    '',
-    '',
-    '',
-    'TOTAL',
-    grandTotalQuantity.toString(),
-    '',
-    formatNumber(grandTotalAmount)
-  ]);
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [['NO', 'LOT NO', 'BRAND', 'FABRIC', 'GARMENT TYPE', 'KARIGARS', 'QTY', 'RATE', 'AMOUNT']],
-    body: lotTableBody,
-    theme: 'grid',
-    styles: { 
-      lineColor: [0, 0, 0], 
-      lineWidth: 0.2, 
-      textColor: [0, 0, 0], 
-      halign: 'center',
-      fontSize: 8,
-      cellPadding: 2
-    },
-    headStyles: { 
-      fillColor: [240, 240, 240], 
-      textColor: [0, 0, 0], 
-      fontStyle: 'bold',
-      lineWidth: 0.2
-    },
-    bodyStyles: (data) => {
-      // Style the total row (last row) with header-style background and bold
-      if (data.row.index === lotTableBody.length - 1) {
-        return {
-          fontStyle: 'bold',
-          fillColor: [240, 240, 240], // Same as header background
-          textColor: [0, 0, 0],
-          halign: 'center'
-        };
-      }
-      return {};
-    },
-    margin: { left: margin, right: margin },
-    columnStyles: {
-      0: { cellWidth: 10, halign: 'center' },
-      1: { cellWidth: 18, halign: 'center' },
-      2: { cellWidth: 25, halign: 'center' },
-      3: { cellWidth: 30, halign: 'center' },
-      4: { cellWidth: 28, halign: 'center' },
-      5: { cellWidth: 25, halign: 'center' },
-      6: { cellWidth: 15, halign: 'center' },
-      7: { cellWidth: 18, halign: 'center' },
-      8: { cellWidth: 25, halign: 'center' }
-    }
-  });
-
-  yPos = doc.lastAutoTable.finalY + 8;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("KARIGAR WISE SUMMARY", margin, yPos);
-  yPos += 5;
-
-  const karigarSummaryBody = [
-    ...karigarWageArray.map((karigar, idx) => [
-      (idx + 1).toString(),
-      karigar.karigarId,
-      karigar.karigarName,
-      supervisorName,
-      formatNumber(karigar.totalQuantity),
-      formatNumber(karigar.totalAmount)
-    ]),
-    [
-      '',
-      '',
-      '',
-      'TOTAL',
-      formatNumber(karigarTotalQuantity),
-      formatNumber(karigarTotalAmount)
-    ]
-  ];
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [['NO', 'KARIGAR ID', 'KARIGAR NAME', 'SUPERVISOR/THEKEDAR', 'TOTAL QTY', 'TOTAL AMOUNT']],
-    body: karigarSummaryBody,
-    theme: 'grid',
-    styles: { 
-      lineColor: [0, 0, 0], 
-      lineWidth: 0.2, 
-      textColor: [0, 0, 0], 
-      halign: 'center',
-      fontSize: 8,
-      cellPadding: 2
-    },
-    headStyles: { 
-      fillColor: [240, 240, 240], 
-      textColor: [0, 0, 0], 
-      fontStyle: 'bold',
-      lineWidth: 0.2
-    },
-    bodyStyles: (data) => {
-      if (data.row.index === karigarSummaryBody.length - 1) {
-        return {
-          fontStyle: 'bold',
-          fillColor: [240, 240, 240], // Same as header background
-          textColor: [0, 0, 0]
-        };
-      }
-      return {};
-    },
-    margin: { left: margin, right: margin },
-    columnStyles: {
-      0: { cellWidth: 12, halign: 'center' },
-      1: { cellWidth: 35, halign: 'center' },
-      2: { cellWidth: 45, halign: 'center' },
-      3: { cellWidth: 45, halign: 'center' },
-      4: { cellWidth: 25, halign: 'center' },
-      5: { cellWidth: 32, halign: 'center' }
-    }
-  });
-
-  yPos = doc.lastAutoTable.finalY + 12;
-
-  const lotDetailsMap = new Map();
-  selectedLotsData.forEach(lot => {
-    lotDetailsMap.set(lot.lotNumber, {
-      garmentType: lot.garmentType || '',
-      brand: lot.brand || '',
-      rate: lot.rate
-    });
-  });
-
-  for (let kIdx = 0; kIdx < karigarWageArray.length; kIdx++) {
-    const karigar = karigarWageArray[kIdx];
-    
-    if (yPos + 60 > pageHeight - 35) {
-      doc.addPage();
-      yPos = 20;
+    const numberToWords = (num) => {
+      const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+        'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+      const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
       
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text("DETAILED KARIGAR WAGE BREAKDOWN (Continued)", margin, yPos);
-      yPos += 5;
-    }
+      const numToWords = (n) => {
+        if (n < 20) return ones[n];
+        if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '');
+        if (n < 1000) return ones[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' ' + numToWords(n%100) : '');
+        if (n < 100000) return numToWords(Math.floor(n/1000)) + ' Thousand' + (n%1000 ? ' ' + numToWords(n%1000) : '');
+        if (n < 10000000) return numToWords(Math.floor(n/100000)) + ' Lakh' + (n%100000 ? ' ' + numToWords(n%100000) : '');
+        return numToWords(Math.floor(n/10000000)) + ' Crore' + (n%10000000 ? ' ' + numToWords(n%10000000) : '');
+      };
+      
+      const whole = Math.floor(num);
+      const words = numToWords(whole);
+      return words;
+    };
+
+    const amountInWords = numberToWords(payableData.amount);
+    const supervisorName = selectedSupervisor || payableData.createdBy || 'Supervisor';
     
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 8;
+    let yPos = 18;
+
+    const formatNumber = (num) => {
+      return parseFloat(num || 0).toLocaleString('en-IN');
+    };
+
+    const currentDate = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+
+    const allKarigarWages = new Map();
+    
+    selectedLotsData.forEach(lot => {
+      if (lot.karigarWageDetails) {
+        Object.entries(lot.karigarWageDetails).forEach(([normalizedKarigar, karigar]) => {
+          // Use normalized name as key for consistent grouping
+          const key = normalizedKarigar;
+          if (!allKarigarWages.has(key)) {
+            allKarigarWages.set(key, {
+              karigarId: karigar.karigarId,
+              karigarName: karigar.karigarName, // Keep original for display
+              totalQuantity: 0,
+              totalAmount: 0,
+              supervisor: supervisorName,
+              lots: []
+            });
+          }
+          const existing = allKarigarWages.get(key);
+          existing.totalQuantity += karigar.totalQuantity;
+          existing.totalAmount += karigar.totalAmount;
+          existing.lots.push(...karigar.lots);
+        });
+      }
+    });
+    
+    const karigarWageArray = Array.from(allKarigarWages.values()).sort((a, b) => 
+      normalizeName(a.karigarName).localeCompare(normalizeName(b.karigarName))
+    );
+    
+    // Calculate grand totals
+    const grandTotalQuantity = selectedLotsData.reduce((sum, lot) => sum + lot.totalQuantity, 0);
+    const grandTotalAmount = selectedLotsData.reduce((sum, lot) => sum + lot.totalAmount, 0);
+    
+    // Calculate karigar summary totals
+    const karigarTotalQuantity = karigarWageArray.reduce((sum, k) => sum + k.totalQuantity, 0);
+    const karigarTotalAmount = karigarWageArray.reduce((sum, k) => sum + k.totalAmount, 0);
+
     doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.3);
-    doc.rect(margin, yPos, pageWidth - (margin * 2), 12);
-    doc.setFillColor(230, 230, 230);
-    doc.rect(margin, yPos, pageWidth - (margin * 2), 12, 'F');
+    doc.setLineWidth(0.4);
+    doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("PAYMENT VOUCHER", pageWidth / 2, yPos, { align: "center" });
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text("THEKEDAR SUPERVISOR PAYMENT SLIP", pageWidth / 2, yPos + 6, { align: "center" });
     
     doc.setFont("helvetica", "bold");
+    doc.text("VOUCHER NUMBER: " + payableId, pageWidth - margin - 2, yPos, { align: "right" });
+
+    yPos += 12;
+
+    doc.setLineWidth(0.3);
+    doc.rect(margin, yPos, pageWidth - (margin * 2), 28);
+    doc.line(pageWidth / 2 + 5, yPos, pageWidth / 2 + 5, yPos + 28);
+
     doc.setFontSize(9);
-    doc.text("KARIGAR ID: " + karigar.karigarId, margin + 3, yPos + 5);
-    doc.text("NAME: " + karigar.karigarName, margin + 65, yPos + 5);
-    doc.text("SUPERVISOR: " + supervisorName, margin + 130, yPos + 5);
-    
-    yPos += 16;
-    
-    const karigarTableBody = [];
-    
-    karigar.lots.forEach((lot, lotIdx) => {
-      const lotDetails = lotDetailsMap.get(lot.lotNumber) || {};
-      const garmentType = lotDetails.garmentType || '';
-      const rate = lotDetails.rate || 0;
-      
-      karigarTableBody.push([
-        (lotIdx + 1).toString(),
-        lot.lotNumber,
-        garmentType,
-        lot.shade,
-        lot.quantity.toString(),
-        rate.toFixed(2),
-        formatNumber(lot.amount)
-      ]);
-    });
-    
-    const dataRowsLength = karigarTableBody.length;
-    
-    // Add empty rows for spacing
-    karigarTableBody.push(['', '', '', '', '', '', '']);
-    karigarTableBody.push(['', '', '', '', '', '', '']);
-    
-    // Add total row with both quantity and amount
-    karigarTableBody.push([
+    const leftX = margin + 3;
+    const rightX = pageWidth / 2 + 8;
+
+    doc.setFont("helvetica", "bold"); doc.text("DATE:", leftX, yPos + 6);
+    doc.setFont("helvetica", "normal"); doc.text(currentDate, leftX + 15, yPos + 6);
+    doc.setFont("helvetica", "bold"); doc.text("PAYEE:", leftX, yPos + 12);
+    doc.setFont("helvetica", "normal"); doc.text(payableData.payeeName || '', leftX + 18, yPos + 12);
+    doc.setFont("helvetica", "bold"); doc.text("CATEGORY:", leftX, yPos + 18);
+    doc.setFont("helvetica", "normal"); doc.text(payableData.category || '', leftX + 22, yPos + 18);
+    doc.setFont("helvetica", "bold"); doc.text("STATUS:", leftX, yPos + 24);
+    doc.setFont("helvetica", "normal"); doc.text(payableData.status || '', leftX + 18, yPos + 24);
+
+    doc.setFont("helvetica", "bold"); doc.text("DUE DATE:", rightX, yPos + 6);
+    doc.setFont("helvetica", "normal"); doc.text(new Date(payableData.dueDate).toLocaleDateString('en-IN'), rightX + 20, yPos + 6);
+    doc.setFont("helvetica", "bold"); doc.text("PAYEE ID:", rightX, yPos + 12);
+    doc.setFont("helvetica", "normal"); doc.text(payableData.payeeId || '', rightX + 20, yPos + 12);
+    doc.setFont("helvetica", "bold"); doc.text("TOTAL QTY:", rightX, yPos + 18);
+    doc.setFont("helvetica", "normal"); doc.text(Math.round(grandTotalQuantity).toString(), rightX + 22, yPos + 18);
+    doc.setFont("helvetica", "bold"); doc.text("THEKEDAR:", rightX, yPos + 24);
+    doc.setFont("helvetica", "normal"); doc.text(supervisorName, rightX + 22, yPos + 24);
+
+    yPos += 28;
+
+    doc.setLineWidth(0.3);
+    doc.rect(margin, yPos, pageWidth - (margin * 2), 10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Amount in Words :", margin + 3, yPos + 6.5);
+    doc.setFont("helvetica", "normal");
+    doc.text(amountInWords + " Rupees Only", margin + 35, yPos + 6.5);
+
+    yPos += 20;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("LOT SUMMARY", margin, yPos);
+    yPos += 5;
+
+    const lotTableBody = selectedLotsData.map((lot, idx) => [
+      (idx + 1).toString(),
+      lot.lotNumber || '',
+      lot.brand || '',
+      lot.fabric || '',
+      lot.garmentType || '',
+      lot.karigarCount.toString(),
+      lot.totalQuantity.toString(),
+      lot.rate.toFixed(2),
+      formatNumber(lot.totalAmount)
+    ]);
+
+    // Add total row to LOT SUMMARY table
+    lotTableBody.push([
       '',
       '',
       '',
-      'TOTAL QTY',
-      karigar.totalQuantity.toString(),
+      '',
+      '',
       'TOTAL',
-      formatNumber(karigar.totalAmount)
+      grandTotalQuantity.toString(),
+      '',
+      formatNumber(grandTotalAmount)
     ]);
-    
-    // Add ADVANCE row below total
-    karigarTableBody.push([
-      '',
-      '',
-      '',
-      '',
-      '',
-      'ADVANCE',
-      ''
-    ]);
-    
+
     autoTable(doc, {
       startY: yPos,
-      head: [['NO', 'LOT NO', 'GARMENT TYPE', 'SHADE', 'QTY', 'RATE', 'AMOUNT']],
-      body: karigarTableBody,
+      head: [['NO', 'LOT NO', 'BRAND', 'FABRIC', 'GARMENT TYPE', 'KARIGARS', 'QTY', 'RATE', 'AMOUNT']],
+      body: lotTableBody,
       theme: 'grid',
       styles: { 
         lineColor: [0, 0, 0], 
@@ -1343,29 +1168,88 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
         cellPadding: 2
       },
       headStyles: { 
-        fillColor: [245, 245, 245], 
+        fillColor: [240, 240, 240], 
         textColor: [0, 0, 0], 
         fontStyle: 'bold',
         lineWidth: 0.2
       },
       bodyStyles: (data) => {
-        if (data.row.index === karigarTableBody.length - 2) { // Total row
+        // Style the total row (last row) with header-style background and bold
+        if (data.row.index === lotTableBody.length - 1) {
           return {
             fontStyle: 'bold',
-            fillColor: [240, 240, 240],
-            textColor: [0, 0, 0]
+            fillColor: [240, 240, 240], // Same as header background
+            textColor: [0, 0, 0],
+            halign: 'center'
           };
         }
-        if (data.row.index === karigarTableBody.length - 1) { // Advance row
+        return {};
+      },
+      margin: { left: margin, right: margin },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 18, halign: 'center' },
+        2: { cellWidth: 25, halign: 'center' },
+        3: { cellWidth: 30, halign: 'center' },
+        4: { cellWidth: 28, halign: 'center' },
+        5: { cellWidth: 25, halign: 'center' },
+        6: { cellWidth: 15, halign: 'center' },
+        7: { cellWidth: 18, halign: 'center' },
+        8: { cellWidth: 25, halign: 'center' }
+      }
+    });
+
+    yPos = doc.lastAutoTable.finalY + 8;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("KARIGAR WISE SUMMARY", margin, yPos);
+    yPos += 5;
+
+    const karigarSummaryBody = [
+      ...karigarWageArray.map((karigar, idx) => [
+        (idx + 1).toString(),
+        karigar.karigarId,
+        karigar.karigarName,
+        supervisorName,
+        formatNumber(karigar.totalQuantity),
+        formatNumber(karigar.totalAmount)
+      ]),
+      [
+        '',
+        '',
+        '',
+        'TOTAL',
+        formatNumber(karigarTotalQuantity),
+        formatNumber(karigarTotalAmount)
+      ]
+    ];
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['NO', 'KARIGAR ID', 'KARIGAR NAME', 'SUPERVISOR/THEKEDAR', 'TOTAL QTY', 'TOTAL AMOUNT']],
+      body: karigarSummaryBody,
+      theme: 'grid',
+      styles: { 
+        lineColor: [0, 0, 0], 
+        lineWidth: 0.2, 
+        textColor: [0, 0, 0], 
+        halign: 'center',
+        fontSize: 8,
+        cellPadding: 2
+      },
+      headStyles: { 
+        fillColor: [240, 240, 240], 
+        textColor: [0, 0, 0], 
+        fontStyle: 'bold',
+        lineWidth: 0.2
+      },
+      bodyStyles: (data) => {
+        if (data.row.index === karigarSummaryBody.length - 1) {
           return {
             fontStyle: 'bold',
-            fillColor: [255, 245, 235],
+            fillColor: [240, 240, 240], // Same as header background
             textColor: [0, 0, 0]
-          };
-        }
-        if (data.row.index >= dataRowsLength && data.row.index < dataRowsLength + 2) {
-          return {
-            fillColor: [255, 255, 240]
           };
         }
         return {};
@@ -1373,169 +1257,306 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
       margin: { left: margin, right: margin },
       columnStyles: {
         0: { cellWidth: 12, halign: 'center' },
-        1: { cellWidth: 22, halign: 'center' },
-        2: { cellWidth: 38, halign: 'center' },
+        1: { cellWidth: 35, halign: 'center' },
+        2: { cellWidth: 45, halign: 'center' },
         3: { cellWidth: 45, halign: 'center' },
-        4: { cellWidth: 20, halign: 'center' },
-        5: { cellWidth: 22, halign: 'center' },
-        6: { cellWidth: 35, halign: 'center' }
+        4: { cellWidth: 25, halign: 'center' },
+        5: { cellWidth: 32, halign: 'center' }
       }
     });
-    
-    yPos = doc.lastAutoTable.finalY + 8;
-    
-    // Simple RECD SIGN on the RIGHT side - no box, just text with signature line
-    const recdSignText = "RECD SIGN ____________________";
-    const textWidth = doc.getTextWidth(recdSignText);
-    const rightMarginX = pageWidth - margin - 10;
-    
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.text(recdSignText, rightMarginX - textWidth, yPos + 5);
-    
-    yPos += 12;
-    
-    if (kIdx < karigarWageArray.length - 1) {
-      doc.setDrawColor(150, 150, 150);
-      doc.setLineWidth(0.3);
-      doc.line(margin, yPos, pageWidth - margin, yPos);
-      yPos += 8;
-    }
-  }
 
-  // ========== SIMPLIFIED PAYMENT SLIP PAGE ==========
-  doc.addPage();
-  yPos = 20;
-  
-  // Main page border
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.5);
-  doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
-  
-  // 1. Header Titles
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text("PAYMENT SLIP", pageWidth / 2, yPos, { align: "center" });
-  yPos += 7;
-  
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text("THEKEDAR / SUPERVISOR PAYMENT SLIP", pageWidth / 2, yPos, { align: "center" });
-  yPos += 10;
-  
-  // 2. Info Box Section
-  const infoBoxHeight = 25;
-  const infoBoxWidth = pageWidth - (margin * 2);
-  const splitPoint = infoBoxWidth * 0.6;
+    yPos = doc.lastAutoTable.finalY + 12;
 
-  doc.setLineWidth(0.3);
-  doc.rect(margin, yPos, infoBoxWidth, infoBoxHeight);
-  doc.line(margin + splitPoint, yPos, margin + splitPoint, yPos + infoBoxHeight);
+    const lotDetailsMap = new Map();
+    selectedLotsData.forEach(lot => {
+      lotDetailsMap.set(lot.lotNumber, {
+        garmentType: lot.garmentType || '',
+        brand: lot.brand || '',
+        rate: lot.rate
+      });
+    });
 
-  // Left Side Details
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "bold");
-  doc.text("VCH NO:", margin + 5, yPos + 7);
-  doc.setFont("helvetica", "normal");
-  doc.text(payableId, margin + 25, yPos + 7);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("DATE:", margin + 5, yPos + 13);
-  doc.setFont("helvetica", "normal");
-  doc.text(currentDate, margin + 25, yPos + 13);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("PAYEE NAME:", margin + 5, yPos + 19);
-  doc.setFont("helvetica", "normal");
-  doc.text(payableData.payeeName || '', margin + 35, yPos + 19);
-
-  // Right Side Amount Box
-  doc.setFont("helvetica", "bold");
-  doc.text("AMOUNT", margin + splitPoint + (infoBoxWidth - splitPoint) / 2, yPos + 6, { align: "center" });
-  
-  const innerBoxW = (infoBoxWidth - splitPoint) - 10;
-  doc.rect(margin + splitPoint + 5, yPos + 8, innerBoxW, 12);
-  doc.setFontSize(11);
-  doc.text("Rs. " + formatNumber(payableData.amount), margin + splitPoint + (infoBoxWidth - splitPoint) / 2, yPos + 16, { align: "center" });
-
-  yPos += infoBoxHeight + 10;
-  
-  // 3. LOT SUMMARY Table
-  const paymentSlipLotBody = selectedLotsData.map((lot, idx) => [
-    (idx + 1).toString(),
-    lot.lotNumber || '',
-    lot.garmentType || '',
-    lot.totalQuantity.toString(),
-    lot.rate.toFixed(2),
-    formatNumber(lot.totalAmount)
-  ]);
-  
-  paymentSlipLotBody.push([
-    '', '', 'TOTAL', 
-    grandTotalQuantity.toString(), 
-    '', 
-    formatNumber(grandTotalAmount)
-  ]);
-  
-  autoTable(doc, {
-    startY: yPos,
-    head: [['NO', 'LOT NUMBER', 'GARMENT TYPE', 'QTY', 'RATE', 'AMOUNT']],
-    body: paymentSlipLotBody,
-    theme: 'grid',
-    styles: { 
-      lineColor: [0, 0, 0], 
-      lineWidth: 0.2, 
-      textColor: [0, 0, 0], 
-      halign: 'center',
-      fontSize: 9,
-      cellPadding: 1.5
-    },
-    headStyles: { 
-      fillColor: [240, 240, 240], 
-      textColor: [0, 0, 0], 
-      fontStyle: 'bold'
-    },
-    bodyStyles: (data) => {
-      if (data.row.index === paymentSlipLotBody.length - 1) {
-        return { 
-          fontStyle: 'bold', 
-          fillColor: [240, 240, 240]
-        };
+    for (let kIdx = 0; kIdx < karigarWageArray.length; kIdx++) {
+      const karigar = karigarWageArray[kIdx];
+      
+      if (yPos + 60 > pageHeight - 35) {
+        doc.addPage();
+        yPos = 20;
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text("DETAILED KARIGAR WAGE BREAKDOWN (Continued)", margin, yPos);
+        yPos += 5;
       }
-      return {};
-    },
-    margin: { left: margin, right: margin }
-  });
-  
-  yPos = doc.lastAutoTable.finalY + 15;
+      
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.3);
+      doc.rect(margin, yPos, pageWidth - (margin * 2), 12);
+      doc.setFillColor(230, 230, 230);
+      doc.rect(margin, yPos, pageWidth - (margin * 2), 12, 'F');
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("KARIGAR ID: " + karigar.karigarId, margin + 3, yPos + 5);
+      doc.text("NAME: " + karigar.karigarName, margin + 65, yPos + 5);
+      doc.text("SUPERVISOR: " + supervisorName, margin + 130, yPos + 5);
+      
+      yPos += 16;
+      
+      const karigarTableBody = [];
+      
+      karigar.lots.forEach((lot, lotIdx) => {
+        const lotDetails = lotDetailsMap.get(lot.lotNumber) || {};
+        const garmentType = lotDetails.garmentType || '';
+        const rate = lotDetails.rate || 0;
+        
+        karigarTableBody.push([
+          (lotIdx + 1).toString(),
+          lot.lotNumber,
+          garmentType,
+          lot.shade,
+          lot.quantity.toString(),
+          rate.toFixed(2),
+          formatNumber(lot.amount)
+        ]);
+      });
+      
+      const dataRowsLength = karigarTableBody.length;
+      
+      // Add empty rows for spacing
+      karigarTableBody.push(['', '', '', '', '', '', '']);
+      karigarTableBody.push(['', '', '', '', '', '', '']);
+      
+      // Add total row with both quantity and amount
+      karigarTableBody.push([
+        '',
+        '',
+        '',
+        'TOTAL QTY',
+        karigar.totalQuantity.toString(),
+        'TOTAL',
+        formatNumber(karigar.totalAmount)
+      ]);
+      
+      // Add ADVANCE row below total
+      karigarTableBody.push([
+        '',
+        '',
+        '',
+        '',
+        '',
+        'ADVANCE',
+        ''
+      ]);
+      
+      autoTable(doc, {
+        startY: yPos,
+        head: [['NO', 'LOT NO', 'GARMENT TYPE', 'SHADE', 'QTY', 'RATE', 'AMOUNT']],
+        body: karigarTableBody,
+        theme: 'grid',
+        styles: { 
+          lineColor: [0, 0, 0], 
+          lineWidth: 0.2, 
+          textColor: [0, 0, 0], 
+          halign: 'center',
+          fontSize: 8,
+          cellPadding: 2
+        },
+        headStyles: { 
+          fillColor: [245, 245, 245], 
+          textColor: [0, 0, 0], 
+          fontStyle: 'bold',
+          lineWidth: 0.2
+        },
+        bodyStyles: (data) => {
+          if (data.row.index === karigarTableBody.length - 2) { // Total row
+            return {
+              fontStyle: 'bold',
+              fillColor: [240, 240, 240],
+              textColor: [0, 0, 0]
+            };
+          }
+          if (data.row.index === karigarTableBody.length - 1) { // Advance row
+            return {
+              fontStyle: 'bold',
+              fillColor: [255, 245, 235],
+              textColor: [0, 0, 0]
+            };
+          }
+          if (data.row.index >= dataRowsLength && data.row.index < dataRowsLength + 2) {
+            return {
+              fillColor: [255, 255, 240]
+            };
+          }
+          return {};
+        },
+        margin: { left: margin, right: margin },
+        columnStyles: {
+          0: { cellWidth: 12, halign: 'center' },
+          1: { cellWidth: 22, halign: 'center' },
+          2: { cellWidth: 38, halign: 'center' },
+          3: { cellWidth: 45, halign: 'center' },
+          4: { cellWidth: 20, halign: 'center' },
+          5: { cellWidth: 22, halign: 'center' },
+          6: { cellWidth: 35, halign: 'center' }
+        }
+      });
+      
+      yPos = doc.lastAutoTable.finalY + 8;
+      
+      // Simple RECD SIGN on the RIGHT side - no box, just text with signature line
+      const recdSignText = "RECD SIGN ____________________";
+      const textWidth = doc.getTextWidth(recdSignText);
+      const rightMarginX = pageWidth - margin - 10;
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text(recdSignText, rightMarginX - textWidth, yPos + 5);
+      
+      yPos += 12;
+      
+      if (kIdx < karigarWageArray.length - 1) {
+        doc.setDrawColor(150, 150, 150);
+        doc.setLineWidth(0.3);
+        doc.line(margin, yPos, pageWidth - margin, yPos);
+        yPos += 8;
+      }
+    }
 
-  // 4. Triple Signature Footer
-  const sigWidth = (pageWidth - (margin * 2) - 20) / 3;
-  const sigY = pageHeight - 35;
-
-  const drawSig = (x, label) => {
-    doc.line(x, sigY, x + sigWidth, sigY);
+    // ========== SIMPLIFIED PAYMENT SLIP PAGE ==========
+    doc.addPage();
+    yPos = 20;
+    
+    // Main page border
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+    
+    // 1. Header Titles
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.text(label, x + (sigWidth / 2), sigY + 5, { align: "center" });
+    doc.setFontSize(18);
+    doc.text("PAYMENT SLIP", pageWidth / 2, yPos, { align: "center" });
+    yPos += 7;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text("THEKEDAR / SUPERVISOR PAYMENT SLIP", pageWidth / 2, yPos, { align: "center" });
+    yPos += 10;
+    
+    // 2. Info Box Section
+    const infoBoxHeight = 25;
+    const infoBoxWidth = pageWidth - (margin * 2);
+    const splitPoint = infoBoxWidth * 0.6;
+
+    doc.setLineWidth(0.3);
+    doc.rect(margin, yPos, infoBoxWidth, infoBoxHeight);
+    doc.line(margin + splitPoint, yPos, margin + splitPoint, yPos + infoBoxHeight);
+
+    // Left Side Details
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("VCH NO:", margin + 5, yPos + 7);
+    doc.setFont("helvetica", "normal");
+    doc.text(payableId, margin + 25, yPos + 7);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("DATE:", margin + 5, yPos + 13);
+    doc.setFont("helvetica", "normal");
+    doc.text(currentDate, margin + 25, yPos + 13);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("PAYEE NAME:", margin + 5, yPos + 19);
+    doc.setFont("helvetica", "normal");
+    doc.text(payableData.payeeName || '', margin + 35, yPos + 19);
+
+    // Right Side Amount Box
+    doc.setFont("helvetica", "bold");
+    doc.text("AMOUNT", margin + splitPoint + (infoBoxWidth - splitPoint) / 2, yPos + 6, { align: "center" });
+    
+    const innerBoxW = (infoBoxWidth - splitPoint) - 10;
+    doc.rect(margin + splitPoint + 5, yPos + 8, innerBoxW, 12);
+    doc.setFontSize(11);
+    doc.text("Rs. " + formatNumber(payableData.amount), margin + splitPoint + (infoBoxWidth - splitPoint) / 2, yPos + 16, { align: "center" });
+
+    yPos += infoBoxHeight + 10;
+    
+    // 3. LOT SUMMARY Table
+    const paymentSlipLotBody = selectedLotsData.map((lot, idx) => [
+      (idx + 1).toString(),
+      lot.lotNumber || '',
+      lot.garmentType || '',
+      lot.totalQuantity.toString(),
+      lot.rate.toFixed(2),
+      formatNumber(lot.totalAmount)
+    ]);
+    
+    paymentSlipLotBody.push([
+      '', '', 'TOTAL', 
+      grandTotalQuantity.toString(), 
+      '', 
+      formatNumber(grandTotalAmount)
+    ]);
+    
+    autoTable(doc, {
+      startY: yPos,
+      head: [['NO', 'LOT NUMBER', 'GARMENT TYPE', 'QTY', 'RATE', 'AMOUNT']],
+      body: paymentSlipLotBody,
+      theme: 'grid',
+      styles: { 
+        lineColor: [0, 0, 0], 
+        lineWidth: 0.2, 
+        textColor: [0, 0, 0], 
+        halign: 'center',
+        fontSize: 9,
+        cellPadding: 1.5
+      },
+      headStyles: { 
+        fillColor: [240, 240, 240], 
+        textColor: [0, 0, 0], 
+        fontStyle: 'bold'
+      },
+      bodyStyles: (data) => {
+        if (data.row.index === paymentSlipLotBody.length - 1) {
+          return { 
+            fontStyle: 'bold', 
+            fillColor: [240, 240, 240]
+          };
+        }
+        return {};
+      },
+      margin: { left: margin, right: margin }
+    });
+    
+    yPos = doc.lastAutoTable.finalY + 15;
+
+    // 4. Triple Signature Footer
+    const sigWidth = (pageWidth - (margin * 2) - 20) / 3;
+    const sigY = pageHeight - 35;
+
+    const drawSig = (x, label) => {
+      doc.line(x, sigY, x + sigWidth, sigY);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.text(label, x + (sigWidth / 2), sigY + 5, { align: "center" });
+    };
+
+    drawSig(margin, "VERIFICATION (CHECKED)");
+    drawSig(margin + sigWidth + 10, "MOHIT SIR");
+    drawSig(margin + (sigWidth * 2) + 20, "SAHIL SIR");
+
+    // Page numbering logic
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(100, 100, 100);
+      doc.text("Page " + i + " of " + pageCount, pageWidth / 2, pageHeight - 8, { align: "center" });
+    }
+    doc.save("Thekedar_Voucher_" + payableId + ".pdf");
+    
+    return payableId;
   };
 
-  drawSig(margin, "VERIFICATION (CHECKED)");
-  drawSig(margin + sigWidth + 10, "MOHIT SIR");
-  drawSig(margin + (sigWidth * 2) + 20, "SAHIL SIR");
-
-  // Page numbering logic
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(7);
-    doc.setTextColor(100, 100, 100);
-    doc.text("Page " + i + " of " + pageCount, pageWidth / 2, pageHeight - 8, { align: "center" });
-  }
-  doc.save("Thekedar_Voucher_" + payableId + ".pdf");
-  
-  return payableId;
-};
   const submitPayable = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -1573,7 +1594,9 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
         
         // Refresh current supervisor view
         if (selectedSupervisor) {
-          setSelectedSupervisor(prev => prev);
+          // Force refresh by re-triggering the useEffect
+          setSelectedLots([]);
+          setCurrentStep(2);
         }
       } else {
         setError(`PDF generated but could not save to Google Sheets: ${saved.error}`);
@@ -1613,14 +1636,13 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
     });
     setSelectedLots([]);
     setCurrentStep(1);
-    setSelectedSupervisor('');
   };
 
   const StepIndicator = () => (
     <div className="tp-step-indicator">
       <div className={`tp-step ${currentStep >= 1 ? 'tp-step-active' : ''}`}>
         <div className="tp-step-number">1</div>
-        <div className="tp-step-label">Select Thekedar</div>
+        <div className="tp-step-label">Verify Thekedar</div>
         {currentStep > 1 && <div className="tp-step-check">✓</div>}
       </div>
       <div className={`tp-step-connector ${currentStep >= 2 ? 'tp-step-connector-active' : ''}`}></div>
@@ -1642,14 +1664,13 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
       <div className="tp-educational-card">
         <div className="tp-educational-icon">📋</div>
         <h3>What is Thekedar Payment?</h3>
-        <p>Thekedar (Supervisor) Payment allows you to process payments to supervisors for completed production lots. When all karigars under a supervisor complete their assigned work for a lot, you can generate payment vouchers.</p>
+        <p>Thekedar (Supervisor) Payment allows you to process payments to supervisors for completed production lots. When all karigars under your supervision complete their assigned work for a lot, you can generate payment vouchers.</p>
       </div>
 
       <div className="tp-educational-card">
         <div className="tp-educational-icon">✅</div>
         <h3>How It Works</h3>
         <ol className="tp-educational-list">
-          <li><strong>Select Thekedar:</strong> Choose a supervisor from the dropdown list</li>
           <li><strong>View Completed Lots:</strong> Only lots where ALL shades are completed AND not yet paid appear</li>
           <li><strong>Select Lots:</strong> Choose the fully completed lots for payment</li>
           <li><strong>Generate Voucher:</strong> Create an official payment slip with all details</li>
@@ -1670,21 +1691,31 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
       <div className="tp-educational-card">
         <div className="tp-educational-icon">🚀</div>
         <h3>Ready to Start?</h3>
-        <p>Select a thekedar from the dropdown below to view their completed lots and process payments.</p>
+        <p>Select completed lots below to process your payment.</p>
       </div>
     </div>
   );
 
-  const NoSupervisorsFound = () => (
+  const UnauthorizedMessage = () => (
     <div className="tp-empty-state">
-      <div className="tp-empty-icon">👥</div>
-      <h3>No Thekedars Found</h3>
-      <p>No supervisors are currently registered in the system. Please ensure:</p>
-      <ul className="tp-empty-list">
-        <li>KarigarProfiles sheet has supervisor data</li>
-        <li>Supervisors are properly assigned to karigars</li>
-        <li>Data is properly synced with Google Sheets</li>
-      </ul>
+      <div className="tp-empty-icon">🔒</div>
+      <h3>Unauthorized Access</h3>
+      <p>You are not authorized to view thekedar payment information.</p>
+      <p>Please contact the administrator if you believe this is an error.</p>
+      <button onClick={onBack} className="tp-btn tp-btn-primary" style={{ marginTop: '20px' }}>
+        Go Back
+      </button>
+    </div>
+  );
+
+  const NoLotsFound = () => (
+    <div className="tp-info-banner">
+      <div className="tp-info-icon">ℹ️</div>
+      <div className="tp-info-content">
+        <strong>No unpaid completed lots found</strong>
+        <p>You don't have any unpaid fully completed lots. Lots appear here only when ALL shades assigned to karigars under your supervision are marked as completed AND not yet paid.</p>
+        {paidLotNumbers.size > 0 && <p><strong>Note:</strong> {paidLotNumbers.size} lot(s) have already been paid and are not shown.</p>}
+      </div>
     </div>
   );
 
@@ -1692,16 +1723,16 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
     <div className="tp-container">
       {/* Header */}
       <div className="tp-header">
-        <button onClick={() => window.history.back()} className="tp-back-btn">← Back</button>
+        <button onClick={onBack} className="tp-back-btn">← Back</button>
         <div className="tp-header-center">
           <h1 className="tp-title">Thekedar Payment</h1>
-          <p className="tp-subtitle">Process payments to thekedars for completed lots</p>
+          <p className="tp-subtitle">Process payments for completed lots under your supervision</p>
         </div>
         <div className="tp-user">
-          <div className="tp-avatar">{supervisor?.name?.charAt(0) || 'U'}</div>
+          <div className="tp-avatar">{selectedSupervisor?.charAt(0) || 'U'}</div>
           <div>
-            <div className="tp-user-name">{supervisor?.name || 'Unknown'}</div>
-            <div className="tp-user-role">Supervisor</div>
+            <div className="tp-user-name">{selectedSupervisor || 'Unknown'}</div>
+            <div className="tp-user-role">Thekedar / Supervisor</div>
           </div>
         </div>
       </div>
@@ -1709,18 +1740,18 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
       {/* Alerts */}
       {showSuccess && <div className="tp-alert tp-alert-success">✓ Payment slip generated successfully!</div>}
       {showStorageSuccess && <div className="tp-alert tp-alert-success">💾 Payment data saved to Google Sheets!</div>}
-      {error && <div className="tp-alert tp-alert-error">⚠ {error}</div>}
+      {error && !error.includes('unauthorized') && <div className="tp-alert tp-alert-error">⚠ {error}</div>}
       {debugInfo && <div className="tp-alert tp-alert-info">ℹ️ {debugInfo}</div>}
       
       {/* Paid Lots Info Alert */}
-      {paidLotNumbers.size > 0 && selectedSupervisor && (
+      {paidLotNumbers.size > 0 && selectedSupervisor && groupedLots.length === 0 && (
         <div className="tp-alert tp-alert-info">
-          ℹ️ {paidLotNumbers.size} lot(s) have already been paid and are excluded from the list below.
+          ℹ️ {paidLotNumbers.size} lot(s) have already been paid. Check completed lots above for pending payments.
         </div>
       )}
 
-      {/* Step Indicator */}
-      {selectedSupervisor && <StepIndicator />}
+      {/* Authorization Check */}
+      {!authorized && !loading && <UnauthorizedMessage />}
 
       {/* Loading State */}
       {loading && (
@@ -1730,27 +1761,33 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
         </div>
       )}
 
-      {/* Main Content */}
-      {!loading && (
+      {/* Main Content - Only show if authorized */}
+      {!loading && authorized && (
         <>
-          {/* Step 1: Select Thekedar */}
+          {/* Step Indicator */}
+          {selectedSupervisor && currentStep > 1 && <StepIndicator />}
+
+          {/* Step 1: Verify Thekedar / Welcome Screen */}
           {currentStep === 1 && (
             <div className="tp-card">
               <div className="tp-card-header">
-                <h2 className="tp-card-title">Step 1: Select Thekedar</h2>
-                <p className="tp-card-subtitle">Choose a supervisor to process their payment</p>
+                <h2 className="tp-card-title">Welcome, {selectedSupervisor}</h2>
+                <p className="tp-card-subtitle">You are logged in as a thekedar/supervisor</p>
               </div>
               <div className="tp-card-body">
-                <div className="tp-select-wrapper">
-                  <label className="tp-label">Choose Thekedar</label>
-                  <select className="tp-select" value={selectedSupervisor} onChange={handleSupervisorChange}>
-                    <option value="">-- Select a thekedar to continue --</option>
-                    {supervisors.map(sup => <option key={sup} value={sup}>{sup}</option>)}
-                  </select>
-                  {supervisors.length === 0 && <NoSupervisorsFound />}
+                <div className="tp-welcome-section">
+                  <div className="tp-welcome-icon">👋</div>
+                  <p>You can view and process payments for lots that have been fully completed under your supervision.</p>
+                  <button 
+                    className="tp-proceed-btn" 
+                    onClick={() => setCurrentStep(2)}
+                    style={{ marginTop: '20px', minWidth: '200px' }}
+                  >
+                    View My Completed Lots →
+                  </button>
                 </div>
                 
-                {!selectedSupervisor && supervisors.length > 0 && <EducationalInfo />}
+                <EducationalInfo />
               </div>
             </div>
           )}
@@ -1760,7 +1797,7 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
             <div className="tp-card">
               <div className="tp-card-header">
                 <div>
-                  <h2 className="tp-card-title">Step 2: Select Completed Lots (Unpaid Only)</h2>
+                  <h2 className="tp-card-title">Step 1: Select Completed Lots (Unpaid Only)</h2>
                   <p className="tp-card-subtitle">Thekedar: <strong>{selectedSupervisor}</strong></p>
                 </div>
                 <div className="tp-stats">
@@ -1768,10 +1805,10 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
                     <div className="tp-stat-value">{supervisorSummary?.totalLots || 0}</div>
                     <div className="tp-stat-label">Completed (Unpaid) Lots</div>
                   </div>
-                  <div className="tp-stat">
+                  {/* <div className="tp-stat">
                     <div className="tp-stat-value">₹{(supervisorSummary?.totalAmount || 0).toLocaleString()}</div>
                     <div className="tp-stat-label">Total Value</div>
-                  </div>
+                  </div> */}
                   <div className="tp-stat">
                     <div className="tp-stat-value">{supervisorSummary?.totalKarigars || 0}</div>
                     <div className="tp-stat-label">Active Karigars</div>
@@ -1780,16 +1817,7 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
               </div>
 
               <div className="tp-card-body">
-                {groupedLots.length === 0 && (
-                  <div className="tp-info-banner">
-                    <div className="tp-info-icon">ℹ️</div>
-                    <div className="tp-info-content">
-                      <strong>No unpaid completed lots found</strong>
-                      <p>This thekedar doesn't have any unpaid fully completed lots. Lots appear here only when ALL shades assigned to karigars under this supervisor are marked as completed AND not yet paid.</p>
-                      {paidLotNumbers.size > 0 && <p><strong>Note:</strong> {paidLotNumbers.size} lot(s) have already been paid and are not shown.</p>}
-                    </div>
-                  </div>
-                )}
+                {groupedLots.length === 0 && <NoLotsFound />}
 
                 {groupedLots.length > 0 && (
                   <>
@@ -1891,12 +1919,15 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          {Object.entries(lot.shadesByKarigar).map(([karigar, shades]) => {
+                                          {Object.entries(lot.shadesByKarigar).map(([normalizedKarigar, shades]) => {
+                                            // Find the original name from karigarWageDetails
+                                            const originalKarigar = lot.karigarWageDetails[normalizedKarigar];
+                                            const displayName = originalKarigar?.karigarName || normalizedKarigar;
                                             const quantity = shades.reduce((sum, s) => sum + s.quantity, 0);
                                             const amount = quantity * lot.rate;
                                             return (
-                                              <tr key={karigar}>
-                                                <td><strong>{karigar}</strong></td>
+                                              <tr key={normalizedKarigar}>
+                                                <td><strong>{displayName}</strong></td>
                                                 <td>{shades.map(s => `${s.shade} (${s.quantity} pcs)`).join(', ')}</td>
                                                 <td className="tp-text-right">{quantity}</td>
                                                 <td className="tp-text-right tp-amount">₹{amount.toLocaleString()}</td>
@@ -1913,7 +1944,7 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
                                         </tfoot>
                                       </table>
                                     </div>
-                                  </td>
+                                   </td>
                                 </tr>
                               )}
                             </React.Fragment>
@@ -1954,7 +1985,7 @@ const generatePaymentSlipPDF = (payableData, selectedLotsData) => {
           {currentStep === 3 && formData.payeeName && (
             <div className="tp-card">
               <div className="tp-card-header">
-                <h2 className="tp-card-title">Step 3: Payment Details</h2>
+                <h2 className="tp-card-title">Step 2: Payment Details</h2>
                 <p className="tp-card-subtitle">Review and generate payment voucher</p>
               </div>
               <div className="tp-card-body">

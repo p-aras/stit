@@ -605,7 +605,76 @@
   font-size: 12px;
   font-weight: 500;
 }
+/* Welcome Banner Styles */
+.ucl-welcome-banner {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  margin: 20px 24px;
+  padding: 16px 24px;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.2);
+  animation: slideInDown 0.5s ease-out;
+}
 
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ucl-welcome-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: white;
+}
+
+.ucl-welcome-icon {
+  font-size: 32px;
+  background: rgba(255, 255, 255, 0.2);
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  animation: wave 1s ease-in-out infinite;
+}
+
+@keyframes wave {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(10deg);
+  }
+  75% {
+    transform: rotate(-10deg);
+  }
+}
+
+.ucl-welcome-content div {
+  flex: 1;
+}
+
+.ucl-welcome-content strong {
+  font-size: 18px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.ucl-welcome-note {
+  font-size: 13px;
+  opacity: 0.9;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 2px solid rgba(255, 255, 255, 0.3);
+}
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .ucl-status-chips {

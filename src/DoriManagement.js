@@ -682,22 +682,22 @@ const DoriManagement = ({ user, onNavigate }) => {
           </div>
         </div>
         
-        <div style={styles.statCard}>
+        {/* <div style={styles.statCard}>
           <div style={styles.statIcon}>👕</div>
           <div style={styles.statContent}>
             <h3 style={styles.statNumber}>{formatNumber(stats.totalPieces)}</h3>
             <p style={styles.statLabel}>Total Pieces</p>
           </div>
-        </div>
+        </div> */}
         
-        <div style={styles.statCard}>
+        {/* <div style={styles.statCard}>
           <div style={styles.statIcon}>💰</div>
           <div style={styles.statContent}>
             <h3 style={styles.statNumber}>{formatCurrency(stats.totalCost)}</h3>
             <p style={styles.statLabel}>Total Cost</p>
           </div>
         </div>
-        
+         */}
         <div style={styles.statCard}>
           <div style={styles.statIcon}>⏱️</div>
           <div style={styles.statContent}>

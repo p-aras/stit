@@ -1,4 +1,4 @@
-// src/App.js - Complete updated version
+// src/App.js - Complete updated version with auto-logout
 
 import React, {
   useMemo,
@@ -7,6 +7,8 @@ import React, {
   Suspense,
   lazy,
   startTransition,
+  useCallback,
+  useRef,
 } from "react";
 import Welcome from "./Welcome";
 
@@ -66,7 +68,7 @@ const ThekedarPayment = lazy(() =>
   import(/* webpackChunkName: "page-thekedar-payment" */ "./ThekedarPayment")
 );
 
-// KarigarLotDetail component - NEW
+// KarigarLotDetail component
 const KarigarLotDetail = lazy(() =>
   import(/* webpackChunkName: "page-karigar-lot-detail" */ "./KarigarLotDetail")
 );
@@ -261,7 +263,191 @@ function prefetchAll() {
   import("./ThekedarPayment");
   import("./Extrapcs");
   import("./PallaJobOrder");
-  import("./KarigarLotDetail"); // NEW - Prefetch KarigarLotDetail
+  import("./KarigarLotDetail");
+}
+
+/** ---------- Auto-logout component wrapper ---------- */
+function withAutoLogout(WrappedComponent, onLogout) {
+  return function AutoLogoutWrapper(props) {
+    useEffect(() => {
+      const resetTimer = () => {
+        const lastActivity = Date.now();
+        localStorage.setItem("lastActivity", lastActivity.toString());
+      };
+
+      // Reset timer on user activity
+      const activities = ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+      activities.forEach(activity => {
+        window.addEventListener(activity, resetTimer);
+      });
+
+      resetTimer(); // Initialize timer
+
+      return () => {
+        activities.forEach(activity => {
+          window.removeEventListener(activity, resetTimer);
+        });
+      };
+    }, []);
+
+    return <WrappedComponent {...props} />;
+  };
+}
+
+/** ---------- Session timeout manager ---------- */
+function useSessionTimeout(timeoutMinutes = 15, onLogout) {
+  const timeoutRef = useRef(null);
+  const warningTimeoutRef = useRef(null);
+  const [showWarning, setShowWarning] = useState(false);
+
+  const clearTimeouts = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+  }, []);
+
+  const resetTimer = useCallback(() => {
+    clearTimeouts();
+    setShowWarning(false);
+
+    // Set warning timeout (1 minute before logout)
+    warningTimeoutRef.current = setTimeout(() => {
+      setShowWarning(true);
+    }, (timeoutMinutes - 1) * 60 * 1000);
+
+    // Set logout timeout
+    timeoutRef.current = setTimeout(() => {
+      setShowWarning(false);
+      if (onLogout) onLogout();
+    }, timeoutMinutes * 60 * 1000);
+  }, [clearTimeouts, timeoutMinutes, onLogout]);
+
+  const resetActivity = useCallback(() => {
+    const lastActivity = localStorage.getItem("lastActivity");
+    if (lastActivity) {
+      const inactiveTime = Date.now() - parseInt(lastActivity);
+      if (inactiveTime >= timeoutMinutes * 60 * 1000) {
+        // User has been inactive, logout
+        if (onLogout) onLogout();
+      } else {
+        // Reset timer based on last activity
+        clearTimeouts();
+        const remainingTime = (timeoutMinutes * 60 * 1000) - inactiveTime;
+        
+        if (remainingTime <= 0) {
+          if (onLogout) onLogout();
+        } else {
+          // Set warning timeout
+          const warningTime = remainingTime - 60000; // Show warning 1 minute before
+          if (warningTime > 0) {
+            warningTimeoutRef.current = setTimeout(() => {
+              setShowWarning(true);
+            }, warningTime);
+          }
+          
+          // Set logout timeout
+          timeoutRef.current = setTimeout(() => {
+            setShowWarning(false);
+            if (onLogout) onLogout();
+          }, remainingTime);
+        }
+      }
+    } else {
+      resetTimer();
+    }
+  }, [clearTimeouts, timeoutMinutes, onLogout, resetTimer]);
+
+  useEffect(() => {
+    const handleUserActivity = () => {
+      localStorage.setItem("lastActivity", Date.now().toString());
+      resetActivity();
+    };
+
+    const activities = ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+    activities.forEach(activity => {
+      window.addEventListener(activity, handleUserActivity);
+    });
+
+    // Check activity on page load
+    resetActivity();
+
+    return () => {
+      activities.forEach(activity => {
+        window.removeEventListener(activity, handleUserActivity);
+      });
+      clearTimeouts();
+    };
+  }, [resetActivity, clearTimeouts]);
+
+  return { showWarning };
+}
+
+/** ---------- Session Warning Modal ---------- */
+function SessionWarningModal({ onStay, onLogout, timeLeft }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0,0,0,0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 9999,
+        fontFamily: "Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background: "white",
+          borderRadius: 16,
+          padding: 32,
+          maxWidth: 400,
+          width: "90%",
+          textAlign: "center",
+          boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)",
+        }}
+      >
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⏰</div>
+        <h3 style={{ margin: 0, color: "#1f2937" }}>Session Expiring Soon!</h3>
+        <p style={{ marginTop: 12, color: "#6b7280" }}>
+          You will be logged out due to inactivity in <strong>{timeLeft}</strong>.
+        </p>
+        <div style={{ marginTop: 24, display: "flex", gap: 12, justifyContent: "center" }}>
+          <button
+            onClick={onStay}
+            style={{
+              padding: "10px 20px",
+              background: "#4f46e5",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Stay Logged In
+          </button>
+          <button
+            onClick={onLogout}
+            style={{
+              padding: "10px 20px",
+              background: "#ef4444",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Logout Now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -278,6 +464,38 @@ export default function App() {
   })();
 
   const [view, setView] = useState(initial);
+  const [isLoggedOut, setIsLoggedOut] = useState(false);
+
+  // Handle logout function
+  const handleLogout = useCallback(() => {
+    console.log("Auto-logout triggered due to inactivity");
+    
+    // Clear user data from localStorage
+    localStorage.removeItem("currentSupervisor");
+    localStorage.removeItem("supervisorName");
+    localStorage.removeItem("lastActivity");
+    localStorage.removeItem("app.view");
+    
+    // Set logged out state
+    setIsLoggedOut(true);
+    
+    // Navigate to welcome page with null user
+    startTransition(() => {
+      setView({ component: "Welcome", user: null, params: null });
+    });
+    
+    // Show notification to user
+    alert("You have been logged out due to 15 minutes of inactivity. Please login again.");
+  }, []);
+
+  // Handle stay logged in (reset timer)
+  const handleStayLoggedIn = useCallback(() => {
+    localStorage.setItem("lastActivity", Date.now().toString());
+    setIsLoggedOut(false);
+  }, []);
+
+  // Initialize session timeout monitoring
+  const { showWarning } = useSessionTimeout(15, handleLogout);
 
   /** keep URL + title + localStorage in sync */
   useEffect(() => {
@@ -301,7 +519,7 @@ export default function App() {
         supervisorPayment: "Thekedar Payment — Garment Manager",
         Extrapcs: "Extrapcs — Garment Manager",
         PallaJobOrder: "Palla Job Order — Garment Manager",
-        KarigarLotDetail: "Karigar Lot Detail — Garment Manager", // NEW
+        KarigarLotDetail: "Karigar Lot Detail — Garment Manager",
       }[view.component] || "Garment Manager";
     localStorage.setItem("app.view", JSON.stringify(view));
   }, [view]);
@@ -323,11 +541,30 @@ export default function App() {
     idle(prefetchAll);
   }, []);
 
-  /** Navigation API used by children */
+  /** Navigation API used by children - UPDATED to store user info */
   const handleNavigate = (component, user, params = null) => {
-    console.log("Navigating to:", component); // Debug log
+    console.log("Navigating to:", component, "User:", user);
+    
+    // Reset activity timer on navigation
+    localStorage.setItem("lastActivity", Date.now().toString());
+    
+    // Store user info in localStorage when navigating
+    if (user) {
+      localStorage.setItem("currentSupervisor", JSON.stringify(user));
+      if (user.name) {
+        localStorage.setItem("supervisorName", user.name);
+      }
+    }
+    
     startTransition(() => setView({ component, user, params }));
   };
+
+  // Reset logged out state when user logs in again
+  useEffect(() => {
+    if (view.user && isLoggedOut) {
+      setIsLoggedOut(false);
+    }
+  }, [view.user, isLoggedOut]);
 
   /** Page map (wrapped in ErrorBoundary + Suspense) */
   const Page = useMemo(() => {
@@ -512,12 +749,13 @@ export default function App() {
         </PageErrorBoundary>
       ),
       
-      // IMPORTANT: This maps the URL path /#/supervisorPayment to your ThekedarPayment component
+      // IMPORTANT: UPDATED - Properly pass supervisor prop
       supervisorPayment: () => (
         <PageErrorBoundary>
           <Suspense fallback={<CenterLoader label="Loading Thekedar Payment..." />}>
             <ThekedarPayment
-              user={view.user}
+              supervisor={view.user}  // CHANGED: use 'supervisor' prop instead of 'user'
+              onBack={() => handleNavigate('Welcome', view.user)}
               onNavigate={handleNavigate}
               params={view.params}
             />
@@ -537,7 +775,6 @@ export default function App() {
         </PageErrorBoundary>
       ),
       
-      // NEW - Karigar Lot Detail Component
       KarigarLotDetail: () => (
         <PageErrorBoundary>
           <Suspense fallback={<CenterLoader label="Loading Karigar Lot Details..." />}>
@@ -560,5 +797,16 @@ export default function App() {
     return map[view.component];
   }, [view]);
 
-  return <Page />;
+  return (
+    <>
+      <Page />
+      {showWarning && (
+        <SessionWarningModal
+          onStay={handleStayLoggedIn}
+          onLogout={handleLogout}
+          timeLeft="1 minute"
+        />
+      )}
+    </>
+  );
 }
