@@ -140,12 +140,18 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
         const headers = data.values[0];
         const rows = data.values.slice(1);
         
-        const lotsDataIdx = headers.findIndex(h => h === 'Lots Data (JSON)');
+        let lotsDataIdx = headers.findIndex(h => h && h.toString().trim().toLowerCase() === 'lots data (json)');
+        if (lotsDataIdx === -1) {
+          lotsDataIdx = headers.findIndex(h => h && h.toString().trim().toLowerCase().includes('lots data'));
+        }
+        if (lotsDataIdx === -1) {
+          lotsDataIdx = 19; // Fallback to default index 19
+        }
         
         rows.forEach(row => {
           let lotsData = [];
           try {
-            if (row[lotsDataIdx]) {
+            if (row && lotsDataIdx < row.length && row[lotsDataIdx]) {
               lotsData = JSON.parse(row[lotsDataIdx]);
             }
           } catch (e) {
@@ -155,7 +161,7 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
           if (lotsData && Array.isArray(lotsData)) {
             lotsData.forEach(lot => {
               if (lot.lotNumber) {
-                paidLots.add(lot.lotNumber.toString());
+                paidLots.add(lot.lotNumber.toString().trim());
               }
             });
           }
@@ -255,7 +261,7 @@ export default function ThekedarPayment({ onBack, supervisor, onNavigate }) {
       value.isFullyCompleted = value.shades.size === value.completedShades.size;
       value.completionPercentage = Math.round((value.completedShades.size / value.shades.size) * 100);
       value.totalKarigars = value.karigars.size;
-      value.isPaid = paidLotNumbers.has(value.lotNumber.toString());
+      value.isPaid = paidLotNumbers.has(value.lotNumber.toString().trim());
       
       const firstAssignment = value.assignments.find(a => a.status === 'completed') || value.assignments[0];
       if (firstAssignment) {
