@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import {
   FiSearch, FiRefreshCw, FiAlertTriangle, FiUser, FiCalendar, FiX, FiCheck,
-  FiScissors, FiInfo, FiPackage, FiTag, FiGrid, FiArrowLeft, FiLoader,FiGlobe,  FiUsers
+  FiScissors, FiInfo, FiPackage, FiTag, FiGrid, FiArrowLeft, FiLoader, FiGlobe, FiUsers
 } from 'react-icons/fi';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -29,10 +29,10 @@ function titleCase(str) {
 }
 function printableDate(isoDate) {
   if (!isoDate) return '';
-  
+
   // Try to parse different date formats
   let dateObj;
-  
+
   // Handle format like "1/5/2026" or "1/5/2026 17:58:25"
   if (isoDate.includes('/')) {
     const dateTimeParts = isoDate.split(' ');
@@ -42,19 +42,19 @@ function printableDate(isoDate) {
       dateObj = new Date(year, month - 1, day);
     }
   }
-  
+
   // Fallback to standard Date parsing
   if (!dateObj || isNaN(dateObj.getTime())) {
     dateObj = new Date(isoDate);
   }
-  
+
   if (isNaN(dateObj.getTime())) return String(isoDate || '');
-  
+
   // Format to Indian date format (DD/MM/YYYY)
   const day = String(dateObj.getDate()).padStart(2, '0');
   const month = String(dateObj.getMonth() + 1).padStart(2, '0');
   const year = dateObj.getFullYear();
-  
+
   return `${day}/${month}/${year}`;
 }
 
@@ -120,7 +120,7 @@ const SUPERVISOR_SHEET_ID = "1iBDfsxA9XEC9nhQE-ALBYlyGRZWOaCYvWsnGfYYbr1I";
 const SUPERVISOR_TAB = "StitchingSupervisors";
 
 const MAX_RANGE = 'A1:Z';
-const DEFAULT_SUPERVISORS = ['SONU', 'SANJAY', 'MONU', 'ROHIT','VINAY'];
+const DEFAULT_SUPERVISORS = ['SONU', 'SANJAY', 'MONU', 'ROHIT', 'VINAY'];
 
 // Helpers
 const norm = (v) => (v ?? '').toString().trim();
@@ -194,7 +194,7 @@ const translations = {
     back: "Back",
     search: "Search",
     reset: "Reset",
-    
+
     // Instructions
     howToUse: "How to Use This Tool",
     step1: "1. Search for a Lot",
@@ -203,21 +203,21 @@ const translations = {
     step2Desc: "View the complete cutting matrix showing colors, cutting tables, sizes, and quantities. Verify all details are correct before proceeding.",
     step3: "3. Issue to Stitching",
     step3Desc: "Once verified, click 'Submit to Stitching' to generate the official issue document and record the transaction in the system.",
-    
+
     // Features
     keyFeatures: "Key Features",
     feature1: "Automatic Lot Detection - Searches both new cutting sheets and old lot databases automatically",
     feature2: "Duplicate Prevention - Prevents re-issuing lots that are already in the stitching pipeline",
     feature3: "Professional PDF Generation - Creates comprehensive issue documents with QR codes for tracking",
     feature4: "Real-time Validation - Checks lot status and ensures data integrity before processing",
-    
+
     // Quick Tips
     quickTips: "Quick Tips",
     tip1: "Lot Format: You can search using full lot numbers (64003) or 4-digit codes for older lots",
     tip2: "Auto-complete: Supervisor names are saved and suggested for faster data entry",
     tip3: "Data Safety: The system automatically checks if a lot is already issued to prevent duplicates",
     tip4: "Offline Capable: PDF generation works even if the data submission encounters temporary issues",
-    
+
     // Lot Information
     lotInfo: "Lot Information",
     lotNumber: "Lot Number",
@@ -227,18 +227,19 @@ const translations = {
     totalPieces: "Total Pieces",
     colors: "Colors",
     sizes: "Sizes",
-    
+    remarks: "Remarks",
+
     // Table
     cuttingMatrix: "Cutting Matrix",
     color: "Color",
     cuttingTable: "Cutting Table",
     totalPcs: "Total Pcs",
     total: "Total",
-    
+
     // Buttons
     submitToStitching: "Submit to Stitching",
     alreadyIssued: "Already Issued",
-    
+
     // Dialog
     issueToStitching: "Issue to Stitching",
     dateOfIssue: "Date of Issue",
@@ -247,7 +248,7 @@ const translations = {
     cancel: "Cancel",
     confirmIssue: "Confirm Issue",
     processing: "Processing...",
-    
+
     // Status Messages
     preparingSubmission: "Preparing submission",
     savingToSheets: "Saving to Sheets",
@@ -255,16 +256,16 @@ const translations = {
     successMessage: "Success! Data submitted and PDF generated.",
     submissionFailed: "Submission Failed",
     tryAgain: "Try Again",
-    
+
     // Errors
     lotAlreadyIssued: "Lot already issued",
     lotAlreadyIssuedDesc: "This lot has been processed before. Please pick a different lot to continue.",
     supervisorRequired: "Supervisor is required.",
     noDataAvailable: "No lot data available. Please search for a lot first.",
-    
+
     // Tip
     tip: "💡 Tip: If your spreadsheet has one tab per lot, name them like",
-    
+
     // Language
     language: "Language",
     hindi: "Hindi",
@@ -278,7 +279,7 @@ const translations = {
     back: "पीछे",
     search: "खोजें",
     reset: "रीसेट",
-    
+
     // Instructions
     howToUse: "इस टूल का उपयोग कैसे करें",
     step1: "1. लॉट खोजें",
@@ -287,21 +288,21 @@ const translations = {
     step2Desc: "रंग, कटिंग टेबल, साइज और मात्रा दिखाने वाली पूरी कटिंग मैट्रिक्स देखें। आगे बढ़ने से पहले सभी विवरण सही हैं सुनिश्चित करें।",
     step3: "3. सिलाई के लिए जारी करें",
     step3Desc: "सत्यापित होने के बाद, आधिकारिक दस्तावेज़ बनाने और लेनदेन रिकॉर्ड करने के लिए 'सिलाई के लिए जमा करें' पर क्लिक करें।",
-    
+
     // Features
     keyFeatures: "मुख्य विशेषताएं",
     feature1: "स्वचालित लॉट डिटेक्शन - नई कटिंग शीट और पुराने लॉट डेटाबेस दोनों में स्वचालित रूप से खोजता है",
     feature2: "डुप्लिकेट रोकथाम - पहले से सिलाई पाइपलाइन में मौजूद लॉट को दोबारा जारी करने से रोकता है",
     feature3: "पेशेवर PDF जनरेशन - ट्रैकिंग के लिए QR कोड वाले व्यापक दस्तावेज़ बनाता है",
     feature4: "रीयल-टाइम वैलिडेशन - प्रोसेसिंग से पहले लॉट स्टेटस की जांच करता है और डेटा अखंडता सुनिश्चित करता है",
-    
+
     // Quick Tips
     quickTips: "त्वरित सुझाव",
     tip1: "लॉट फॉर्मेट: आप पूर्ण लॉट नंबर (64003) या पुराने लॉट के लिए 4-अंकीय कोड का उपयोग कर सकते हैं",
     tip2: "ऑटो-कम्पलीट: सुपरवाइजर नाम सहेजे जाते हैं और तेज डेटा एंट्री के लिए सुझाए जाते हैं",
     tip3: "डेटा सुरक्षा: सिस्टम स्वचालित रूप से जांचता है कि लॉट पहले से जारी तो नहीं है",
     tip4: "ऑफलाइन सक्षम: डेटा सबमिशन में अस्थायी समस्याएं आने पर भी PDF जनरेशन काम करता है",
-    
+
     // Lot Information
     lotInfo: "लॉट जानकारी",
     lotNumber: "लॉट नंबर",
@@ -311,18 +312,19 @@ const translations = {
     totalPieces: "कुल पीस",
     colors: "रंग",
     sizes: "साइज",
-    
+    remarks: "टिप्पणी",
+
     // Table
     cuttingMatrix: "कटिंग मैट्रिक्स",
     color: "रंग",
     cuttingTable: "कटिंग टेबल",
     totalPcs: "कुल पीस",
     total: "कुल",
-    
+
     // Buttons
     submitToStitching: "सिलाई के लिए जमा करें",
     alreadyIssued: "पहले ही जारी",
-    
+
     // Dialog
     issueToStitching: "सिलाई के लिए जारी करें",
     dateOfIssue: "जारी करने की तारीख",
@@ -331,7 +333,7 @@ const translations = {
     cancel: "रद्द करें",
     confirmIssue: "जारी करने की पुष्टि करें",
     processing: "प्रोसेसिंग...",
-    
+
     // Status Messages
     preparingSubmission: "सबमिशन तैयार कर रहा है",
     savingToSheets: "शीट में सेव कर रहा है",
@@ -339,16 +341,16 @@ const translations = {
     successMessage: "सफलता! डेटा जमा किया गया और PDF जनरेट हुआ।",
     submissionFailed: "सबमिशन विफल",
     tryAgain: "फिर से कोशिश करें",
-    
+
     // Errors
     lotAlreadyIssued: "लॉट पहले ही जारी हो चुका है",
     lotAlreadyIssuedDesc: "यह लॉट पहले प्रोसेस किया जा चुका है। कृपया जारी रखने के लिए कोई अलग लॉट चुनें।",
     supervisorRequired: "सुपरवाइजर आवश्यक है।",
     noDataAvailable: "कोई लॉट डेटा उपलब्ध नहीं है। कृपया पहले लॉट खोजें।",
-    
+
     // Tip
     tip: "💡 टिप: यदि आपकी स्प्रेडशीट में प्रति लॉट एक टैब है, तो उन्हें इस तरह नाम दें",
-    
+
     // Language
     language: "भाषा",
     hindi: "हिंदी",
@@ -407,7 +409,7 @@ function generateIssueStatusCacheKey(lotNo) {
 // ============================
 async function fetchSheetDataCached(sheetId, range, signal) {
   const cacheKey = generateSheetCacheKey(sheetId, range);
-  
+
   const cached = sheetDataCache.get(cacheKey);
   if (cached) {
     return cached;
@@ -415,16 +417,16 @@ async function fetchSheetDataCached(sheetId, range, signal) {
 
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${GOOGLE_API_KEY}`;
   const res = await fetch(url, { signal });
-  
+
   if (!res.ok) {
     throw new Error(`Failed to fetch sheet data: ${res.status}`);
   }
 
   const data = await res.json();
   const result = data?.values || [];
-  
+
   sheetDataCache.set(cacheKey, result);
-  
+
   return result;
 }
 
@@ -433,44 +435,44 @@ async function fetchSheetDataCached(sheetId, range, signal) {
 // ============================
 async function fetchSupervisorsFromSheet(signal) {
   const cacheKey = `supervisors_stitching_${SUPERVISOR_SHEET_ID}_${SUPERVISOR_TAB}`;
-  
+
   // Check cache first (cache for 10 minutes)
   const cached = sheetDataCache.get(cacheKey);
   if (cached) {
     console.log('📦 Cache HIT for supervisors list');
     return cached;
   }
-  
+
   console.log('🔄 Fetching stitching supervisors from Google Sheet...');
-  
+
   try {
     if (!GOOGLE_API_KEY) {
       console.warn('No API key found, using default supervisors');
       return DEFAULT_SUPERVISORS;
     }
-    
+
     // Fetch columns A through F (ID, Username, Password, Name, Department, Shift)
     const range = encodeURIComponent(`${SUPERVISOR_TAB}!A2:F`);
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${SUPERVISOR_SHEET_ID}/values/${range}?key=${GOOGLE_API_KEY}`;
     const res = await fetch(url, { signal });
-    
+
     if (!res.ok) {
       throw new Error(`Failed to fetch supervisors: ${res.status}`);
     }
-    
+
     const data = await res.json();
     const rows = data?.values || [];
-    
+
     if (!rows.length) {
       console.warn('No supervisor data found in sheet');
       return DEFAULT_SUPERVISORS;
     }
-    
+
     // Column indices based on your data structure
     // A=0: ID, B=1: Username, C=2: Password, D=3: Name, E=4: Department, F=5: Shift
     const COL_NAME = 3;        // Name column (D)
     const COL_DEPARTMENT = 4;  // Department column (E)
-    
+
     // Filter only supervisors with Department = "Stitching"
     const stitchingSupervisors = rows
       .filter(row => {
@@ -482,21 +484,21 @@ async function fetchSupervisorsFromSheet(signal) {
         return name;
       })
       .filter(name => name && name.length > 0); // Remove empty names
-    
+
     if (stitchingSupervisors.length === 0) {
       console.warn('No stitching department supervisors found');
       return DEFAULT_SUPERVISORS;
     }
-    
+
     // Remove duplicates and sort
     const uniqueSupervisors = [...new Set(stitchingSupervisors.map(s => s.toUpperCase()))];
     uniqueSupervisors.sort();
-    
+
     console.log(`✅ Fetched ${uniqueSupervisors.length} stitching department supervisors:`, uniqueSupervisors);
-    
+
     // Cache the result (10 minutes)
     sheetDataCache.set(cacheKey, uniqueSupervisors, 10 * 60 * 1000);
-    
+
     return uniqueSupervisors;
   } catch (error) {
     console.error('❌ Error fetching supervisors:', error);
@@ -506,7 +508,7 @@ async function fetchSupervisorsFromSheet(signal) {
 
 async function isLotAlreadyIssued(lotNo, signal) {
   const cacheKey = generateIssueStatusCacheKey(lotNo);
-  
+
   const cached = issueStatusCache.get(cacheKey);
   if (cached !== undefined && cached !== null) {
     console.log('📦 Cache HIT for issue status:', lotNo, '->', cached);
@@ -522,12 +524,12 @@ async function isLotAlreadyIssued(lotNo, signal) {
   }
 
   const range = encodeURIComponent(`${ISSUE_LOG_TAB}!A2:L`);
-  
+
   try {
     console.log('📊 Fetching Index sheet data...');
     const rows = await fetchSheetDataCached(ISSUE_LOG_SHEET_ID, range, signal);
     console.log('📊 Index sheet rows count:', rows.length);
-    
+
     const COL_LOT = 0;
     const COL_DOI = 10;
     const COL_SUPERVISOR = 11;
@@ -540,7 +542,7 @@ async function isLotAlreadyIssued(lotNo, signal) {
       const rowLotNo = norm(row[COL_LOT]);
       const dateValue = norm(row[COL_DOI] || '');
       const supervisorValue = norm(row[COL_SUPERVISOR] || '');
-      
+
       if (rowLotNo === norm(lotNo)) {
         foundLot = true;
         isIssued = dateValue !== "" || supervisorValue !== "";
@@ -555,7 +557,7 @@ async function isLotAlreadyIssued(lotNo, signal) {
 
     console.log(`📝 Final result for ${lotNo}: isIssued =`, isIssued);
     issueStatusCache.set(cacheKey, isIssued);
-    
+
     return isIssued;
   } catch (error) {
     console.warn('❌ Error checking issue status:', error);
@@ -566,8 +568,8 @@ async function isLotAlreadyIssued(lotNo, signal) {
 
 async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumber = null) {
   if (!GOOGLE_API_KEY || !ISSUE_LOG_SHEET_ID) {
-    return { 
-      pendingLots: 0, 
+    return {
+      pendingLots: 0,
       pendingPcs: 0,
       garmentTypeSummary: [],
       zipOrderDate: ''
@@ -575,13 +577,13 @@ async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumbe
   }
 
   const range = encodeURIComponent(`${ISSUE_LOG_TAB}!A1:AZ`);
-  
+
   try {
     const rows = await fetchSheetDataCached(ISSUE_LOG_SHEET_ID, range, signal);
-    
+
     if (!rows || rows.length < 2) {
-      return { 
-        pendingLots: 0, 
+      return {
+        pendingLots: 0,
         pendingPcs: 0,
         garmentTypeSummary: [],
         zipOrderDate: ''
@@ -599,23 +601,23 @@ async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumbe
       STYLE: 6,
       ZIP_ORDER_DATE: 18
     };
-    
+
     const firstRow = rows[0] || [];
-    const hasHeaderWords = firstRow.some(cell => 
+    const hasHeaderWords = firstRow.some(cell =>
       includes(cell, 'lot') || includes(cell, 'supervisor') || includes(cell, 'date')
     );
-    
+
     const startRow = hasHeaderWords ? 1 : 0;
     let pendingLots = 0;
     let pendingPcs = 0;
     const garmentTypeMap = new Map();
     let zipOrderDateForCurrentLot = '';
-    
+
     for (let i = startRow; i < rows.length; i++) {
       const row = rows[i] || [];
-      
+
       if (row.length < 19) continue;
-      
+
       const supervisorRaw = row[COLUMN_INDICES.SUPERVISOR] || '';
       const supervisorNormalized = norm(supervisorRaw).toLowerCase().trim();
       const dateOfIssue = row[COLUMN_INDICES.DATE_OF_ISSUE] ? norm(row[COLUMN_INDICES.DATE_OF_ISSUE]) : '';
@@ -624,7 +626,7 @@ async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumbe
       const totalPcsRaw = row[COLUMN_INDICES.TOTAL_PCS] || '';
       const statusRaw = row[COLUMN_INDICES.STATUS] || '';
       const zipOrderDateRaw = row[COLUMN_INDICES.ZIP_ORDER_DATE] || '';
-      
+
       if (currentLotNumber && norm(lotNumber) === norm(currentLotNumber)) {
         if (zipOrderDateRaw && zipOrderDateRaw.trim() !== '') {
           const zipDateString = norm(zipOrderDateRaw);
@@ -632,27 +634,27 @@ async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumbe
           zipOrderDateForCurrentLot = dateParts[0];
         }
       }
-      
+
       const supervisorMatches = supervisorNormalized === norm(supervisor).toLowerCase().trim();
-      
+
       if (supervisorMatches && dateOfIssue) {
         let totalPcs = 0;
         if (totalPcsRaw && totalPcsRaw !== '') {
           const cleaned = String(totalPcsRaw).replace(/[^\d.]/g, '');
           totalPcs = parseFloat(cleaned) || 0;
         }
-        
+
         let isCompleted = false;
         if (statusRaw) {
           const statusNormalized = norm(statusRaw).toLowerCase();
-          isCompleted = statusNormalized.includes('complete') || 
-                       statusNormalized.includes('completed');
+          isCompleted = statusNormalized.includes('complete') ||
+            statusNormalized.includes('completed');
         }
-        
+
         if (!isCompleted) {
           pendingLots++;
           pendingPcs += totalPcs;
-          
+
           if (garmentType && garmentType.trim() !== '') {
             const key = garmentType.toUpperCase().trim();
             if (!garmentTypeMap.has(key)) {
@@ -669,21 +671,21 @@ async function fetchPendingLotsForSupervisor(supervisor, signal, currentLotNumbe
         }
       }
     }
-    
+
     const garmentTypeSummary = Array.from(garmentTypeMap.values())
       .sort((a, b) => b.pendingLots - a.pendingLots);
-    
+
     return {
       pendingLots,
       pendingPcs,
       garmentTypeSummary,
       zipOrderDate: zipOrderDateForCurrentLot
     };
-    
+
   } catch (error) {
     console.error('❌ Error in fetchPendingLotsForSupervisor:', error);
-    return { 
-      pendingLots: 0, 
+    return {
+      pendingLots: 0,
       pendingPcs: 0,
       garmentTypeSummary: [],
       zipOrderDate: ''
@@ -713,7 +715,7 @@ function classifyLot(lotInput) {
 // ============================
 async function fetchLotMatrixViaSheetsApi(lotNo, signal) {
   const cacheKey = generateLotMatrixCacheKey(lotNo);
-  
+
   const cached = lotMatrixCache.get(cacheKey);
   if (cached) {
     console.log('📦 Cache HIT for lot matrix:', lotNo);
@@ -761,7 +763,7 @@ async function fetchLotMatrixViaSheetsApi(lotNo, signal) {
   }
 
   lotMatrixCache.set(cacheKey, result);
-  
+
   return result;
 }
 
@@ -770,44 +772,44 @@ async function fetchLotMatrixViaSheetsApi(lotNo, signal) {
 // ============================
 async function fetchOldLotMeta(lotNo, signal) {
   const range = encodeURIComponent(`${OLD_META_TAB}!A3:G`);
-  
+
   try {
     const rows = await fetchSheetDataCached(OLD_META_SHEET_ID, range, signal);
-    
+
     if (rows.length < 2) return { garmentType: '', style: '', fabric: '', category: '' };
 
     const headers = rows[0].map(norm);
 
-    const lotIdx     = headers.findIndex(h => includes(h, 'lot'));
-    const itemIdx    = headers.findIndex(h => includes(h, 'item'));
-    const styleIdx   = headers.findIndex(h => includes(h, 'style'));
-    const fabricIdx  = headers.findIndex(h => includes(h, 'fabric'));
-    const catIdx     = headers.findIndex(h => includes(h, 'gents') || includes(h, 'ladies') || includes(h, 'kids'));
+    const lotIdx = headers.findIndex(h => includes(h, 'lot'));
+    const itemIdx = headers.findIndex(h => includes(h, 'item'));
+    const styleIdx = headers.findIndex(h => includes(h, 'style'));
+    const fabricIdx = headers.findIndex(h => includes(h, 'fabric'));
+    const catIdx = headers.findIndex(h => includes(h, 'gents') || includes(h, 'ladies') || includes(h, 'kids'));
 
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i] || [];
       if (lotIdx !== -1 && norm(r[lotIdx]) === norm(lotNo)) {
         return {
-          garmentType: itemIdx   !== -1 ? norm(r[itemIdx])   : '',
-          style:       styleIdx  !== -1 ? norm(r[styleIdx])  : '',
-          fabric:      fabricIdx !== -1 ? norm(r[fabricIdx]) : '',
-          category:    catIdx    !== -1 ? norm(r[catIdx])    : ''
+          garmentType: itemIdx !== -1 ? norm(r[itemIdx]) : '',
+          style: styleIdx !== -1 ? norm(r[styleIdx]) : '',
+          fabric: fabricIdx !== -1 ? norm(r[fabricIdx]) : '',
+          category: catIdx !== -1 ? norm(r[catIdx]) : ''
         };
       }
     }
   } catch (error) {
     console.warn('Failed to fetch old lot meta:', error);
   }
-  
+
   return { garmentType: '', style: '', fabric: '', category: '' };
 }
 
 async function fetchIndexSheet(signal) {
-  const range = encodeURIComponent('Index!A1:Z');
-  
+  const range = encodeURIComponent('Index!A1:AZ');
+
   try {
     const rows = await fetchSheetDataCached(SHEET_ID, range, signal);
-    
+
     if (!rows?.length) {
       throw new Error('Index sheet is empty');
     }
@@ -828,7 +830,7 @@ async function fetchFromCuttingUsingIndex(lotInfo, signal) {
 
   try {
     const rows = await fetchSheetDataCached(SHEET_ID, range, signal);
-    
+
     console.log(`Fetched ${rows.length} rows from Cutting sheet using index`);
 
     const parsed = parseMatrixWithIndexInfo(rows, lotInfo);
@@ -841,6 +843,7 @@ async function fetchFromCuttingUsingIndex(lotInfo, signal) {
     const parsedAlt = parseMatrix(rows, lotNumber);
     if (parsedAlt && parsedAlt.rows && parsedAlt.rows.length > 0) {
       parsedAlt.imageUrl = lotInfo.imageUrl || '';
+      parsedAlt.remarks = lotInfo.remarks || '';
       console.log('Successfully parsed with alternative method');
       return parsedAlt;
     }
@@ -866,25 +869,25 @@ function normalizeHeaderKey(s) {
 
 const HDR_SYNONYMS = {
   item: new Set([
-    'item name','item','item description','style','style name','article','article name','itemname'
+    'item name', 'item', 'item description', 'style', 'style name', 'article', 'article name', 'itemname'
   ]),
   shade: new Set([
-    'shade name','shade','colour','color','color name','shade colour','shade color','colour name'
+    'shade name', 'shade', 'colour', 'color', 'color name', 'shade colour', 'shade color', 'colour name'
   ]),
   qty: new Set([
-    'quantity','qty','pcs','qty pcs','qtypcs','qty pcs','qtypcs','qty (pcs)','qtypcs',
-    'issue qty','issue quantity','total qty','total quantity','qtypiece','pcs qty','pcsqty'
+    'quantity', 'qty', 'pcs', 'qty pcs', 'qtypcs', 'qty pcs', 'qtypcs', 'qty (pcs)', 'qtypcs',
+    'issue qty', 'issue quantity', 'total qty', 'total quantity', 'qtypiece', 'pcs qty', 'pcsqty'
   ]),
   lot: new Set([
-    'issue lot number','lot','lot number','issued lot','issue lot no','issue lot no.','lotno'
+    'issue lot number', 'lot', 'lot number', 'issued lot', 'issue lot no', 'issue lot no.', 'lotno'
   ]),
   pack: new Set([
-    'pack size','pack / size','pack/size','pack','size','packet size','sizes'
+    'pack size', 'pack / size', 'pack/size', 'pack', 'size', 'packet size', 'sizes'
   ]),
   cutting: new Set([
-    'cutting table','cutting','ct',
-    'issue supplier/worker name','supplier/worker name','supplier/worker',
-    'issue supplier','supplier','worker','karigar','issue karigar'
+    'cutting table', 'cutting', 'ct',
+    'issue supplier/worker name', 'supplier/worker name', 'supplier/worker',
+    'issue supplier', 'supplier', 'worker', 'karigar', 'issue karigar'
   ])
 };
 
@@ -894,7 +897,7 @@ function isMostlyNumeric(colValues) {
     const t = norm(v);
     if (!t) continue;
     total++;
-    const n = parseFloat(t.replace(/[, ]/g,''));
+    const n = parseFloat(t.replace(/[, ]/g, ''));
     if (Number.isFinite(n)) numeric++;
   }
   return total > 0 && (numeric / total) >= 0.6;
@@ -921,11 +924,11 @@ function detectOldLotsHeaderAndMap(rows) {
   const H = header.map(h => normalizeHeaderKey(h));
   const map = { item: -1, shade: -1, qty: -1, lot: -1, pack: -1, cutting: -1 };
   H.forEach((name, idx) => {
-    if (map.item === -1 && HDR_SYNONYMS.item.has(name))  map.item  = idx;
+    if (map.item === -1 && HDR_SYNONYMS.item.has(name)) map.item = idx;
     if (map.shade === -1 && HDR_SYNONYMS.shade.has(name)) map.shade = idx;
-    if (map.qty === -1 && HDR_SYNONYMS.qty.has(name))     map.qty   = idx;
-    if (map.lot === -1 && HDR_SYNONYMS.lot.has(name))     map.lot   = idx;
-    if (map.pack === -1 && HDR_SYNONYMS.pack.has(name))   map.pack  = idx;
+    if (map.qty === -1 && HDR_SYNONYMS.qty.has(name)) map.qty = idx;
+    if (map.lot === -1 && HDR_SYNONYMS.lot.has(name)) map.lot = idx;
+    if (map.pack === -1 && HDR_SYNONYMS.pack.has(name)) map.pack = idx;
     if (map.cutting === -1 && HDR_SYNONYMS.cutting.has(name)) map.cutting = idx;
   });
 
@@ -975,7 +978,7 @@ function detectOldLotsHeaderAndMap(rows) {
         if (!vals.length) continue;
         if (isMostlyNumeric(vals)) continue;
         const distinct = new Set(vals.map(v => v.toLowerCase())).size;
-        const avgLen = vals.reduce((a,s)=>a+s.length,0)/vals.length;
+        const avgLen = vals.reduce((a, s) => a + s.length, 0) / vals.length;
         const score = distinct - avgLen * 0.05;
         if (score > bestDistinct) { bestDistinct = score; best = c; }
       }
@@ -1005,16 +1008,16 @@ function extractFirst4DigitsLot(itemName) {
 async function fetchOldLotsFor(lotNo, signal) {
   try {
     console.log('🔄 [OLD LOT] Searching for lot:', lotNo);
-    
+
     const url = new URL(OLD_APPS_SCRIPT_URL);
     url.searchParams.append('lot', lotNo);
     url.searchParams.append('action', 'getLotData');
-    
+
     const searchTime = new Date().toISOString();
     url.searchParams.append('searchTime', searchTime);
     url.searchParams.append('source', 'issue_stitching_app');
-    
-    fetch(url, { 
+
+    fetch(url, {
       signal,
       mode: 'no-cors'
     }).then(() => {
@@ -1022,16 +1025,16 @@ async function fetchOldLotsFor(lotNo, signal) {
     }).catch(err => {
       console.warn('⚠️ [OLD LOT] Search log failed:', err.message);
     });
-    
+
   } catch (appsScriptError) {
     console.warn('⚠️ [OLD LOT] Apps Script call failed:', appsScriptError.message);
   }
-  
+
   console.log('🔄 [OLD LOT] Fetching data from Sheets API...');
-  
+
   const range = encodeURIComponent(`${OLD_LOTS_SOURCE_TAB}!A2:Z`);
   const rows = await fetchSheetDataCached(SHEET_IDD, range, signal);
-  
+
   if (rows.length < 2) throw new Error(`${OLD_LOTS_SOURCE_TAB} seems empty`);
 
   const { headerIdx, map, headerRaw } = detectOldLotsHeaderAndMap(rows);
@@ -1075,7 +1078,7 @@ async function fetchOldLotsFor(lotNo, signal) {
   const shadeCutting = new Map();
   let firstItem = '';
   const cuttingIdx = map.cutting;
-  
+
   function mostCommon(arr) {
     const m = new Map();
     for (const v of arr) {
@@ -1091,7 +1094,7 @@ async function fetchOldLotsFor(lotNo, signal) {
   for (const r of filtered) {
     const shade = norm(r[map.shade]);
     const t = norm(r[map.qty]);
-    const qty = t ? parseFloat(t.replace(/[, ]/g,'')) : 0;
+    const qty = t ? parseFloat(t.replace(/[, ]/g, '')) : 0;
     shadeSum.set(shade, (shadeSum.get(shade) ?? 0) + (Number.isFinite(qty) ? qty : 0));
     if (!firstItem) firstItem = norm(r[map.item]);
     if (cuttingIdx !== -1) {
@@ -1102,24 +1105,24 @@ async function fetchOldLotsFor(lotNo, signal) {
   }
 
   const rowsOut = Array.from(shadeSum.entries())
-    .sort((a,b) => a[0].localeCompare(b[0]))
+    .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([shade, pcs]) => ({
       color: shade,
       cuttingTable: (cuttingIdx !== -1)
         ? (() => {
-            const raw = mostCommon(shadeCutting.get(shade) || []);
-            const m = raw.match(/(\d+)$/);
-            return m ? m[1] : raw;
-          })()
+          const raw = mostCommon(shadeCutting.get(shade) || []);
+          const m = raw.match(/(\d+)$/);
+          return m ? m[1] : raw;
+        })()
         : null,
       sizes: {},
       totalPcs: pcs
     }));
 
   const meta = await fetchOldLotMeta(lot4, signal);
-  
+
   console.log('💾 [OLD LOT] Data ready for display and future issue');
-  
+
   return {
     source: 'old',
     lotNumber: lot4,
@@ -1130,8 +1133,8 @@ async function fetchOldLotsFor(lotNo, signal) {
     imageUrl: '',
     sizes: [],
     rows: rowsOut,
-    totals: { perSize: {}, grand: rowsOut.reduce((s,r)=>s+(r.totalPcs||0),0) },
-    
+    totals: { perSize: {}, grand: rowsOut.reduce((s, r) => s + (r.totalPcs || 0), 0) },
+
     _payloadForIssue: {
       meta: {
         issueDate: new Date().toISOString().split('T')[0],
@@ -1340,6 +1343,7 @@ function parseMatrixWithIndexInfo(rows, lotInfo) {
     fabric,
     garmentType,
     imageUrl: lotInfo.imageUrl || '',
+    remarks: lotInfo.remarks || '',
     sizes: sizeKeys,
     rows: body,
     totals
@@ -1350,9 +1354,9 @@ async function searchInCuttingSheet(lotNo, signal) {
   console.log('Searching in Cutting sheet (fallback)');
 
   const range = encodeURIComponent('Cutting!A1:Z');
-  
+
   const rows = await fetchSheetDataCached(SHEET_ID, range, signal);
-    
+
   const section = sliceSectionForLot(rows, lotNo);
 
   if (section?.length) {
@@ -1495,7 +1499,7 @@ function findLotInIndex(indexData, lotNo) {
   const numRowsCol = headers.findIndex(h => includes(h, 'numrows'));
   const headerColsCol = headers.findIndex(h => includes(h, 'headercols'));
   const imgCol = headers.findIndex(h => includes(h, 'image url') || (includes(h, 'image') && !includes(h, 'usage')));
-  
+
   const dateOfIssueCol = headers.findIndex(h => includes(h, 'date of issue'));
   const supervisorCol = headers.findIndex(h => includes(h, 'supervisor'));
 
@@ -1513,6 +1517,11 @@ function findLotInIndex(indexData, lotNo) {
       const hasSupervisor = supervisorCol !== -1 && norm(row[supervisorCol]) !== "";
       const isAlreadyIssued = hasDateOfIssue || hasSupervisor;
 
+      // REMARKS COLUMN logic:
+      const remarksCol = headers.findIndex(h => includes(h, 'remarks') || includes(h, 'remark'));
+      const finalRemarksCol = remarksCol !== -1 ? remarksCol : 29; // AD column is index 29 (0-indexed)
+      const remarks = row[finalRemarksCol] !== undefined ? norm(row[finalRemarksCol]) : '';
+
       return {
         lotNumber: rowLotNo,
         startRow: startRowCol !== -1 ? parseInt(row[startRowCol]) || 1 : 1,
@@ -1526,6 +1535,7 @@ function findLotInIndex(indexData, lotNo) {
         imageUrl: imgCol !== -1 ? norm(row[imgCol]) : '',
         dateOfIssue: dateOfIssueCol !== -1 ? norm(row[dateOfIssueCol]) : '',
         supervisor: supervisorCol !== -1 ? norm(row[supervisorCol]) : '',
+        remarks: remarks,
         isAlreadyIssued: isAlreadyIssued
       };
     }
@@ -1535,12 +1545,12 @@ function findLotInIndex(indexData, lotNo) {
 }
 
 // ============================
-async function generateIssuePdf(matrix, { 
-  issueDate, 
-  supervisor, 
-  manpower = '0', 
-  pendingLots = 0, 
-  pendingPcs = 0, 
+async function generateIssuePdf(matrix, {
+  issueDate,
+  supervisor,
+  manpower = '0',
+  pendingLots = 0,
+  pendingPcs = 0,
   garmentTypeSummary = [],
   zipOrderDate = ''
 }) {
@@ -1562,7 +1572,7 @@ async function generateIssuePdf(matrix, {
 
   async function addHeader(currentPage) {
     const borderX = 8, borderY = 8, borderW = W - 16, borderH = H - 16;
-    
+
     if (currentPage === 1) {
       doc.rect(borderX, borderY, borderW, borderH);
     }
@@ -1617,7 +1627,7 @@ async function generateIssuePdf(matrix, {
     if (currentPage === 1) {
       const s1InnerX = s1X + 6;
       let s1Y = headerTop + 16;
-      
+
       printLabelValue('Date', printableDate(issueDate), s1InnerX, s1Y);
 
       s1Y += 16;
@@ -1643,12 +1653,24 @@ async function generateIssuePdf(matrix, {
         fabricToPrint += '…';
       }
       printLabelValue('Fabric', fabricToPrint, s1InnerX, s1Y);
+
+      s1Y += 16;
+      const remarksText = String(matrix.remarks || '');
+      const availableRemarksW = sectionW - (s1InnerX - s1X) - doc.getTextWidth('Remarks') - 12;
+      let remarksToPrint = remarksText;
+      if (doc.getTextWidth(remarksText) > availableRemarksW) {
+        while (remarksToPrint.length && doc.getTextWidth(remarksToPrint + '…') > availableRemarksW) {
+          remarksToPrint = remarksToPrint.slice(0, -1);
+        }
+        remarksToPrint += '…';
+      }
+      printLabelValue('Remarks', remarksToPrint, s1InnerX, s1Y);
     }
 
     if (currentPage === 1) {
       const s2InnerX = s2X + 6;
       let s2Y = headerTop + 16;
-      
+
       const priorityText = String(matrix.priority ?? '');
       const availablePriorityW = sectionW - (s2InnerX - s2X) - doc.getTextWidth('Priority') - 12;
       let priorityToPrint = priorityText;
@@ -1699,30 +1721,30 @@ async function generateIssuePdf(matrix, {
     if (currentPage === 1) {
       const s3InnerX = s3X + 6;
       let s3Y = headerTop + 16;
-      
+
       doc.setFont('times', 'bold');
       doc.setFontSize(10);
       doc.text('Quality Approved Signature', s3InnerX, s3Y);
-      
+
       s3Y += 20;
       doc.setFont('times', 'normal');
       doc.setFontSize(9);
       doc.text('Name:', s3InnerX, s3Y);
-      
+
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.5);
       const nameLineY = s3Y + 2;
       doc.line(s3InnerX + 30, nameLineY, s3X + sectionW - 6, nameLineY);
-      
+
       s3Y += 16;
       doc.text('Sign:', s3InnerX, s3Y);
-      
+
       const signLineY = s3Y + 2;
       doc.line(s3InnerX + 30, signLineY, s3X + sectionW - 6, signLineY);
-      
+
       s3Y += 16;
       doc.text('Date:', s3InnerX, s3Y);
-      
+
       const dateLineY = s3Y + 2;
       doc.line(s3InnerX + 30, dateLineY, s3X + sectionW - 6, dateLineY);
     }
@@ -1737,7 +1759,7 @@ async function generateIssuePdf(matrix, {
   const CM = M + borderPad;
   const tableTop = CM + 12 + 80 + 6 + 8; // headerTop (CM+12) + sectionH (80) + 6 + 8
 
-  const head = [[ 'M.No', 'KARIGAR', 'C.table', 'COLOR', ...sizes, 'PCS', 'BACK', 'FRONT', 'PACKING' ]];
+  const head = [['M.No', 'KARIGAR', 'C.table', 'COLOR', ...sizes, 'PCS', 'BACK', 'FRONT', 'PACKING']];
 
   const body = (matrix.rows || []).map((r) => ([
     valOrEmpty(r.mNo ?? ''),
@@ -1769,14 +1791,14 @@ async function generateIssuePdf(matrix, {
   const CM2 = CM;
   const available = W - (CM2 * 2);
 
-  const fixedW = { 
+  const fixedW = {
     mno: 40,
-    kaigar: 85, 
+    kaigar: 85,
     table: 45,
-    color: 70, 
-    pcs: 45, 
-    back: 45, 
-    front: 45, 
+    color: 70,
+    pcs: 45,
+    back: 45,
+    front: 45,
     packing: 60
   };
   const fixedSum = Object.values(fixedW).reduce((a, b) => a + b, 0);
@@ -1789,33 +1811,33 @@ async function generateIssuePdf(matrix, {
     sizeW = candidate > desiredSizeW ? candidate : desiredSizeW;
   }
 
-  const idxMno   = 0;
+  const idxMno = 0;
   const idxKaigar = 1;
-  const idxTable  = 2;
-  const idxColor  = 3;
+  const idxTable = 2;
+  const idxColor = 3;
   const idxFirstSize = 4;
-  const idxPcs   = idxFirstSize + sizesCount;
-  const idxBack  = idxPcs + 1;
+  const idxPcs = idxFirstSize + sizesCount;
+  const idxBack = idxPcs + 1;
   const idxFront = idxBack + 1;
   const idxPacking = idxFront + 1;
 
   const colStyles = {
-    [idxMno]:    { halign: 'center', cellWidth: fixedW.mno,    overflow: 'linebreak' },
-    [idxKaigar]: { halign: 'left',   cellWidth: fixedW.kaigar, overflow: 'linebreak' },
-    [idxTable]:  { halign: 'center', cellWidth: fixedW.table,  overflow: 'linebreak' },
-    [idxColor]:  { halign: 'left',   cellWidth: fixedW.color,  overflow: 'linebreak' },
-    [idxPcs]:    { halign: 'center', cellWidth: fixedW.pcs,    overflow: 'linebreak' },
-    [idxBack]:   { halign: 'center', cellWidth: fixedW.back,   overflow: 'linebreak' },
-    [idxFront]:  { halign: 'center', cellWidth: fixedW.front,  overflow: 'linebreak' },
-    [idxPacking]:{ halign: 'center', cellWidth: fixedW.packing, overflow: 'linebreak' },
+    [idxMno]: { halign: 'center', cellWidth: fixedW.mno, overflow: 'linebreak' },
+    [idxKaigar]: { halign: 'left', cellWidth: fixedW.kaigar, overflow: 'linebreak' },
+    [idxTable]: { halign: 'center', cellWidth: fixedW.table, overflow: 'linebreak' },
+    [idxColor]: { halign: 'left', cellWidth: fixedW.color, overflow: 'linebreak' },
+    [idxPcs]: { halign: 'center', cellWidth: fixedW.pcs, overflow: 'linebreak' },
+    [idxBack]: { halign: 'center', cellWidth: fixedW.back, overflow: 'linebreak' },
+    [idxFront]: { halign: 'center', cellWidth: fixedW.front, overflow: 'linebreak' },
+    [idxPacking]: { halign: 'center', cellWidth: fixedW.packing, overflow: 'linebreak' },
   };
   for (let i = 0; i < sizesCount; i++) {
     colStyles[idxFirstSize + i] = { halign: 'center', cellWidth: sizeW, overflow: 'linebreak' };
   }
 
   const tableConfig = {
-    head, 
-    body, 
+    head,
+    body,
     foot,
     startY: tableTop,
     theme: 'grid',
@@ -1823,34 +1845,34 @@ async function generateIssuePdf(matrix, {
     styles: {
       font: 'times',
       fontSize: 8,
-      textColor: [0,0,0],
-      lineColor: [0,0,0],
+      textColor: [0, 0, 0],
+      lineColor: [0, 0, 0],
       lineWidth: line,
       cellPadding: 3,
       halign: 'center',
       valign: 'middle',
       overflow: 'linebreak'
     },
-    headStyles: { 
-      fillColor: [255,255,255], 
-      textColor: [0,0,0], 
-      fontStyle: 'bold', 
+    headStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [0, 0, 0],
+      fontStyle: 'bold',
       fontSize: 9,
-      halign: 'center' 
+      halign: 'center'
     },
     bodyStyles: { fillColor: null },
-    footStyles: { 
-      fillColor: [255,255,255], 
-      textColor: [0,0,0], 
-      fontStyle: 'bold', 
+    footStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [0, 0, 0],
+      fontStyle: 'bold',
       fontSize: 8,
-      halign: 'center' 
+      halign: 'center'
     },
     columnStyles: colStyles,
     margin: { left: CM2, right: CM2 },
-    didDrawPage: async function(data) {
+    didDrawPage: async function (data) {
       await addHeader(data.pageNumber);
-      
+
       const pageCount = doc.internal.getNumberOfPages();
       doc.setFontSize(8);
       doc.text(
@@ -1858,7 +1880,7 @@ async function generateIssuePdf(matrix, {
         data.settings.margin.left,
         doc.internal.pageSize.height - 10
       );
-      
+
       const borderX = 8, borderY = 8, borderW = W - 16, borderH = H - 16;
       if (data.pageNumber > 1) {
         doc.rect(borderX, borderY, borderW, borderH);
@@ -1871,12 +1893,12 @@ async function generateIssuePdf(matrix, {
   const afterTableY = doc.lastAutoTable ? (doc.lastAutoTable.finalY + 16) : (tableTop + 200);
   const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
   const totalPages = doc.internal.getNumberOfPages();
-  
+
   if (currentPage === totalPages && afterTableY < H - 200) {
-    await drawBottomSections(doc, afterTableY, W, H, CM2, matrix, { 
-      manpower, 
-      pendingLots, 
-      pendingPcs, 
+    await drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
+      manpower,
+      pendingLots,
+      pendingPcs,
       garmentTypeSummary,
       zipOrderDate
     });
@@ -1886,10 +1908,10 @@ async function generateIssuePdf(matrix, {
   doc.save(fname);
 }
 
-async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, { 
-  manpower = '0', 
-  pendingLots = 0, 
-  pendingPcs = 0, 
+async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
+  manpower = '0',
+  pendingLots = 0,
+  pendingPcs = 0,
   garmentTypeSummary = [],
   zipOrderDate = ''
 }) {
@@ -1910,7 +1932,7 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
 
   doc.rect(leftBoxX, leftBoxY, leftBoxW, leftBoxH);
 
-  const checklistRows = ['Brand','EMB Recd', 'Printing Recd', 'Zip Recd', 'Dori Recd', 'Label', 'Any Other'];
+  const checklistRows = ['Brand', 'EMB Recd', 'Printing Recd', 'Zip Recd', 'Dori Recd', 'Label', 'Any Other'];
   const headerH2 = 22;
   const rowH = (leftBoxH - headerH2) / checklistRows.length;
 
@@ -1977,63 +1999,63 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
   }
 
   doc.rect(garmentSummaryBoxX, garmentSummaryBoxY, garmentSummaryBoxW, garmentSummaryBoxH);
-  
-  doc.setFont('times', 'bold'); 
+
+  doc.setFont('times', 'bold');
   doc.setFontSize(9);
   doc.text('GARMENT TYPE SUMMARY', garmentSummaryBoxX + garmentSummaryBoxW / 2, garmentSummaryBoxY + 14, { align: 'center' });
-  
+
   doc.setFont('times', 'bold');
   doc.setFontSize(8);
   const totalPendingY = garmentSummaryBoxY + 30;
   doc.text(`Total Pending Lots: ${pendingLots}`, garmentSummaryBoxX + 8, totalPendingY);
-  
+
   const totalPcsY = totalPendingY + 8;
   doc.text(`Total Pending Pcs: ${pendingPcs.toLocaleString()}`, garmentSummaryBoxX + 8, totalPcsY);
-  
+
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.3);
   const separatorY = totalPcsY + 10;
   doc.line(garmentSummaryBoxX + 8, separatorY, garmentSummaryBoxX + garmentSummaryBoxW - 8, separatorY);
-  
+
   doc.setFont('times', 'bold');
   doc.setFontSize(7);
   const breakdownY = separatorY + 8;
   doc.text('Breakdown by Garment Type:', garmentSummaryBoxX + 8, breakdownY);
-  
-  if (garmentTypeSummary.length > 0) { 
+
+  if (garmentTypeSummary.length > 0) {
     doc.setFont('times', 'normal');
     doc.setFontSize(7);
-    
+
     const startX = garmentSummaryBoxX + 8;
     let yPos = breakdownY + 12;
     const lineHeight = 10;
     const itemSpacing = 2;
-    
+
     const sortedTypes = [...garmentTypeSummary].sort((a, b) => b.pendingLots - a.pendingLots);
     const typesToShow = sortedTypes.slice(0, 4);
-    
+
     const typeColWidth = 60;
     const lotsColWidth = 25;
     const pcsColWidth = 35;
-    
+
     for (const type of typesToShow) {
       let typeName = type.garmentType;
       const maxTypeChars = 15;
-      
+
       if (typeName.length > maxTypeChars) {
         typeName = typeName.substring(0, maxTypeChars - 1) + "…";
       }
-      
+
       const lotsText = `${type.pendingLots} lots`;
       const pcsText = `(${type.pendingPcs.toLocaleString()})`;
-      
+
       doc.text(typeName, startX, yPos);
       doc.text(lotsText, startX + typeColWidth, yPos);
       doc.text(pcsText, startX + typeColWidth + lotsColWidth, yPos);
-      
+
       yPos += lineHeight + itemSpacing;
     }
-    
+
     const remainingTypes = garmentTypeSummary.length - typesToShow.length;
     if (remainingTypes > 0) {
       doc.setFont('times', 'italic');
@@ -2053,30 +2075,41 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
     const cardGap = 10;
     const totalGaps = cardGap * 3;
     const cardHeight = 70;
-    
+
     const cardWidth = (availableWidth - totalGaps) / 4;
     const startX = CM2;
     const sigBoxY = H - 140;
     const stickerY = sigBoxY - cardHeight - 8;
-    
+
     const zipBoxWidth = cardWidth;
-    const zipBoxHeight = 40;
+    const baseZipBoxHeight = 40;
     const zipBoxX = startX;
+
+    // Calculate remarks lines to determine height dynamically
+    const remarksBoxX = zipBoxX + zipBoxWidth + cardGap;
+    const remarksBoxW = availableWidth - zipBoxWidth - cardGap;
+    const maxRemarksWidth = remarksBoxW - 12;
+    const remarksText = String(matrix.remarks || '');
+    const remarksLines = remarksText ? doc.splitTextToSize(remarksText, maxRemarksWidth) : [];
+
+    // Determine dynamic height based on text content (heading + lines + padding)
+    const requiredRemarksH = remarksText ? (18 + remarksLines.length * 10) : baseZipBoxHeight;
+    const zipBoxHeight = Math.max(baseZipBoxHeight, requiredRemarksH);
     const zipBoxY = stickerY - zipBoxHeight - 10;
-    
+
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.7);
     doc.rect(zipBoxX, zipBoxY, zipBoxWidth, zipBoxHeight);
-    
+
     doc.setFont('times', 'bold');
     doc.setFontSize(9);
     doc.text('ZIP ORDER DATE', zipBoxX + zipBoxWidth / 2, zipBoxY + 12, { align: 'center' });
-    
+
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.6);
     const lineY = zipBoxY + 16;
     doc.line(zipBoxX + 10, lineY, zipBoxX + zipBoxWidth - 10, lineY);
-    
+
     if (zipOrderDate && zipOrderDate.trim() !== '') {
       const formattedDate = printableDate(zipOrderDate);
       doc.setFont('times', 'bold');
@@ -2094,43 +2127,63 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
       doc.text('__________', noDateX, noDateY, { align: 'center' });
       doc.setTextColor(0, 0, 0);
     }
-    
+
+    // SPECIAL REMARKS Box next to ZIP ORDER DATE
+    const remarksBoxY = zipBoxY;
+    const remarksBoxH = zipBoxHeight;
+
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.7);
+    doc.rect(remarksBoxX, remarksBoxY, remarksBoxW, remarksBoxH);
+
+    doc.setFont('times', 'bold');
+    doc.setFontSize(8);
+    doc.text('SPECIAL REMARKS', remarksBoxX + 6, remarksBoxY + 12);
+
+    if (remarksText) {
+      doc.setFont('times', 'normal');
+      doc.setFontSize(8);
+      const textX = remarksBoxX + 6;
+      const textY = remarksBoxY + 23;
+      doc.text(remarksLines, textX, textY);
+    }
+
     function drawCard(x, y, width, height, title) {
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.7);
       doc.rect(x, y, width, height, 'FD');
-      
+
       const headerHeight = 20;
       doc.setFillColor(255, 255, 255);
       doc.rect(x, y, width, headerHeight, 'F');
-      
+
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.6);
       doc.line(x, y + headerHeight, x + width, y + headerHeight);
-      
+
       doc.setFont('times', 'bold');
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
       doc.text(title, x + width / 2, y + headerHeight / 2 + 3, { align: 'center', baseline: 'middle' });
-      
+
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.6);
       doc.line(x, y, x + width, y);
-      
+
       return headerHeight;
     }
 
     const manpowerX = startX;
     const manpowerHeaderH = drawCard(manpowerX, stickerY, cardWidth, cardHeight, 'MANPOWER');
-    
+
     doc.setFont('times', 'bold');
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(18);
     const manpowerValue = String(manpower || '0');
     const manpowerValueY = stickerY + manpowerHeaderH + (cardHeight - manpowerHeaderH) / 2 - 5;
     doc.text(manpowerValue, manpowerX + cardWidth / 2, manpowerValueY, { align: 'center', baseline: 'middle' });
-    
+
     doc.setFont('times', 'normal');
     doc.setFontSize(7);
     const subtitleY = stickerY + cardHeight - 10;
@@ -2138,34 +2191,34 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
 
     const stitchX = manpowerX + cardWidth + cardGap;
     const stitchHeaderH = drawCard(stitchX, stickerY, cardWidth, cardHeight, 'STITCHING INSPECTION');
-    
+
     const pad = 8;
     doc.setFont('times', 'bold');
     doc.setFontSize(10);
     const checkedY = stickerY + stitchHeaderH + 8;
     doc.text('CHECKED', stitchX + cardWidth / 2, checkedY, { align: 'center' });
-    
+
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.5);
     const lineY2 = checkedY + 4;
     doc.line(stitchX + pad, lineY2, stitchX + cardWidth - pad, lineY2);
-    
+
     doc.setFont('times', 'normal');
     doc.setFontSize(8);
     const lotNoY = lineY2 + 8;
     doc.text('Lot No.:', stitchX + pad, lotNoY);
-    
+
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.2);
     const lotLineY = lotNoY + 1;
     doc.line(stitchX + pad + 25, lotLineY, stitchX + cardWidth - pad, lotLineY);
-    
+
     const dateY2 = lotNoY + 8;
     doc.text('Date:', stitchX + pad, dateY2);
-    
+
     const dateLineY = dateY2 + 1;
     doc.line(stitchX + pad + 18, dateLineY, stitchX + cardWidth - pad, dateLineY);
-    
+
     doc.setFont('times', 'italic');
     doc.setFontSize(7);
     const sigLabelY = stickerY + cardHeight - 8;
@@ -2173,31 +2226,31 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
 
     const workSummaryX = stitchX + cardWidth + cardGap;
     const workHeaderH = drawCard(workSummaryX, stickerY, cardWidth, cardHeight, 'WORK SUMMARY');
-    
+
     doc.setFont('times', 'bold');
     doc.setFontSize(9);
     const pendingLotsLabelY = stickerY + workHeaderH + 10;
     doc.text('PENDING LOTS:', workSummaryX + pad, pendingLotsLabelY);
-    
+
     doc.setFont('times', 'bold');
     doc.setFontSize(8);
     const pendingLotsStr = String(pendingLots || 0);
     doc.text(pendingLotsStr, workSummaryX + cardWidth - pad, pendingLotsLabelY, { align: 'right' });
-    
+
     doc.setFont('times', 'bold');
     doc.setFontSize(8);
     const pendingPcsLabelY = pendingLotsLabelY + 14;
     doc.text('PENDING PCS:', workSummaryX + pad, pendingPcsLabelY);
-    
+
     let pcsFontSize = 8;
     const pendingPcsStr = String(pendingPcs || 0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
     if (pendingPcsStr.length > 8) pcsFontSize = 11;
     if (pendingPcsStr.length > 10) pcsFontSize = 10;
-    
+
     doc.setFont('times', 'bold');
     doc.setFontSize(pcsFontSize);
     doc.text(pendingPcsStr, workSummaryX + cardWidth - pad, pendingPcsLabelY, { align: 'right' });
-    
+
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.2);
     const separatorY2 = pendingLotsLabelY + 6;
@@ -2205,34 +2258,34 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
 
     const packingX = workSummaryX + cardWidth + cardGap;
     const packingHeaderH = drawCard(packingX, stickerY, cardWidth, cardHeight, 'PACKING PERSON');
-    
+
     doc.setFont('times', 'bold');
     doc.setFontSize(10);
     const nameLabelY = stickerY + packingHeaderH + 8;
     doc.text('NAME', packingX + cardWidth / 2, nameLabelY, { align: 'center' });
-    
+
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.3);
     const nameLineY = nameLabelY + 4;
     doc.line(packingX + pad, nameLineY, packingX + cardWidth - pad, nameLineY);
-    
+
     doc.setFont('times', 'normal');
     doc.setFontSize(8);
     const nameFieldY = nameLineY + 8;
     doc.text('Name:', packingX + pad, nameFieldY);
-    
+
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.);
     const nameUnderlineY = nameFieldY + 1;
     doc.line(packingX + pad + 20, nameUnderlineY, packingX + cardWidth - pad, nameUnderlineY);
-    
+
     const signFieldY = nameFieldY + 8;
     doc.text('Sign:', packingX + pad, signFieldY);
-    
+
     const signUnderlineY = signFieldY + 1;
     doc.line(packingX + pad + 20, signUnderlineY, packingX + cardWidth - pad, signUnderlineY);
   }
-  
+
   drawStickers();
 
   const sig1W = 120;
@@ -2282,11 +2335,11 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
         const word = words[i];
         const test = cur ? (cur + ' ' + word) : word;
         const w = ctx.measureText(test).width;
-        if (w > maxTextW && cur) { 
-          lines.push(cur); 
-          cur = word; 
-        } else { 
-          cur = test; 
+        if (w > maxTextW && cur) {
+          lines.push(cur);
+          cur = word;
+        } else {
+          cur = test;
         }
       }
       if (cur) lines.push(cur);
@@ -2339,7 +2392,7 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
 
     doc.addImage(dataUrl, 'PNG', imgX, imgY, imgW, imgH);
   } catch (e) {
-    doc.setFont('times', 'normal'); 
+    doc.setFont('times', 'normal');
     doc.setFontSize(9);
     const fallbackY = sigBoxY + sigBoxH + 15;
     doc.text('NOTE: Get Pintu sir\'s signature. Lot cannot be issued without it.', CM2, fallbackY, { maxWidth: W - 2 * CM2 });
@@ -2350,66 +2403,66 @@ async function drawBottomSections(doc, afterTableY, W, H, CM2, matrix, {
 // STYLES
 // ============================
 const Wrap = styled.div`
-  max-width: 2200px;
+  max-width: 2400px;
   margin: 0 auto;
-  padding: 24px 20px 40px;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: #ffffffff;
+  padding: 32px 24px 60px;
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #1e293b;
   background: #ffffffff;
   min-height: 100vh;
 `;
 
 const HeaderPaper = styled.div`
-  background: rgba(0, 29, 95, 0.7);
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+  border-radius: 20px;
+  padding: 32px;
+  margin-bottom: 32px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 32px;
   color: white;
   align-items: center;
-  @media (max-width: 900px) { grid-template-columns: 1fr; gap: 20px; }
+  @media (max-width: 900px) { grid-template-columns: 1fr; gap: 24px; padding: 24px; }
 `;
 
 const TitleSection = styled.div`
-  display: flex; align-items: center; gap: 16px;
-  h1 { margin: 0 0 6px 0; font-size: 1.8rem; font-weight: 700; color: #ffffffff; }
-  p { margin: 0; color: #ffffffff; font-size: 1rem; }
+  display: flex; align-items: center; gap: 20px;
+  h1 { margin: 0 0 8px 0; font-size: 2rem; font-weight: 800; color: #ffffff; letter-spacing: -0.025em; }
+  p { margin: 0; color: #cbd5e1; font-size: 1.05rem; line-height: 1.5; }
 `;
 const TitleIcon = styled.div`
   display: flex; align-items: center; justify-content: center;
-  width: 60px; height: 60px; border-radius: 14px;
-  background: linear-gradient(135deg, #000274 0%, #1b0058ff 100%);
-  color: white; font-size: 24px;
-  box-shadow: 0 6px 12px rgba(99, 102, 241, 0.25);
+  width: 64px; height: 64px; border-radius: 16px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: white; font-size: 28px;
+  box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3);
 `;
 
 const SearchSection = styled.div` display: flex; flex-direction: column; gap: 16px; `;
 const Form = styled.form`
-  display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+  display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
   @media (max-width: 560px) { grid-template-columns: 1fr; }
 `;
 const SearchBox = styled.label`
   display: grid; grid-template-columns: 24px 1fr; align-items: center; gap: 12px;
-  padding: 14px 16px; border-radius: 12px; background: #ffffffff; border: 2px solid #e2e8f0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04); color: #114793ff; transition: all 0.2s ease;
-  &:focus-within { border-color: #000000; box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15); }
-  input { background: transparent; border: none; outline: none; color: #000000ff; font-size: 1rem; ::placeholder { colorrgba(0, 59, 143, 1)b8; } }
+  padding: 14px 20px; border-radius: 14px; background: #ffffff; border: 2px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); color: #6366f1; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  &:focus-within { border-color: #6366f1; box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15); }
+  input { background: transparent; border: none; outline: none; color: #0f172a; font-size: 1rem; font-weight: 550; ::placeholder { color: #94a3b8; } }
 `;
 
-const BtnRow = styled.div` display: flex; gap: 10px; align-items: center; `;
+const BtnRow = styled.div` display: flex; gap: 12px; align-items: center; `;
 const BaseBtn = styled.button`
-  border-radius: 12px; padding: 12px 18px; font-weight: 600; display: inline-flex;
-  align-items: center; gap: 8px; cursor: pointer; border: none; transition: all 0.2s ease; font-size: 0.95rem;
+  border-radius: 14px; padding: 14px 24px; font-weight: 600; display: inline-flex;
+  align-items: center; gap: 8px; cursor: pointer; border: none; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); font-size: 0.95rem;
 `;
 const PrimaryBtn = styled(BaseBtn)`
-  background: linear-gradient(135deg, #6366f1 0%, #390ba5ff 100%); color: white; box-shadow: 0 4px 8px rgba(99, 102, 241, 0.3);
-  &:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(99, 102, 241, 0.4); }
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+  &:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5); }
   &:disabled { opacity: 0.6; cursor: not-allowed; }
 `;
-const GhostBtn = styled(BaseBtn)` background: white; border: 2px solid #e2e8f0; color: #00275eff; &:hover { background: #f8fafc; border-color: #cbd5e1; } `;
+const GhostBtn = styled(BaseBtn)` background: #ffffff; border: 2px solid #e2e8f0; color: #475569; &:hover { background: #f8fafc; border-color: #cbd5e1; color: #0f172a; } `;
 
 const Spinner = styled.div`
   width: ${props => props.size || '16px'};
@@ -2600,6 +2653,38 @@ const ErrorCard = styled.div`
   padding: 14px 16px; border-radius: 12px; font-weight: 500;
 `;
 
+const RemarksCard = styled.div`
+  margin-bottom: 24px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  padding: 16px 20px;
+  border-radius: 12px;
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  border-left: 4px solid #f59e0b;
+
+  .remarks-header {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    color: #b45309;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .remarks-text {
+    font-size: 0.95rem;
+    color: #78350f;
+    line-height: 1.5;
+  }
+`;
+
 const HintCard = styled.div`
   margin-top: 24px; padding: 16px; border-radius: 12px; background: white; border: 2px dashed #cbd5e1;
   color: #003681ff; font-size: 0.95rem; line-height: 1.5; display: flex; align-items: center; gap: 12px;
@@ -2613,43 +2698,45 @@ const ContentGrid = styled.div`
 `;
 
 const InfoPanel = styled.div`
-  background: white; border-radius: 16px; padding: 24px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  display: flex; flex-direction: column; height: fit-content;border-bottom: 1px solid black;border-top: 1px solid black;
+  background: white; border-radius: 20px; padding: 28px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  display: flex; flex-direction: column; height: fit-content; border: 1px solid #e2e8f0;
 `;
 
 const TablePanel = styled.div`
-  background: white; border-radius: 16px; padding: 24px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  overflow: hidden; display: flex; flex-direction: column;border-bottom: 1px solid black;border-top: 1px solid black;
+  background: white; border-radius: 20px; padding: 28px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  overflow: hidden; display: flex; flex-direction: column; border: 1px solid #e2e8f0;
 `;
 
 const PanelHeader = styled.div`
-  display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;
-  h3 { margin: 0; font-size: 1.2rem; font-weight: 600; color: #1e293b; }
-  svg { color: #1d0061; }
+  display: flex; align-items: center; gap: 10px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;
+  h3 { margin: 0; font-size: 1.3rem; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; }
+  svg { color: #4f46e5; font-size: 1.25rem; }
 `;
 
 const InfoGrid = styled.div` display: grid; gap: 16px; margin-bottom: 24px; `;
-const InfoItem = styled.div` display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 12px; background: #f8fafc; border-radius: 12px;`;
-const InfoIcon = styled.div` display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; background: rgba(139, 92, 246, 0.1); color: #8b5cf6;`;
-const InfoLabel = styled.div` font-size: 0.85rem; color: #020066ff; font-weight: 500; margin-bottom: 4px; `;
-const InfoValue = styled.div` font-weight: 600; color: #001941; font-size: 1rem; `;
+const InfoItem = styled.div` display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 14px 16px; background: #f8fafc; border-radius: 14px; border: 1px solid #f1f5f9; `;
+const InfoIcon = styled.div` display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 12px; background: rgba(99, 102, 241, 0.1); color: #4f46e5; `;
+const InfoLabel = styled.div` font-size: 0.8rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; `;
+const InfoValue = styled.div` font-weight: 700; color: #0f172a; font-size: 1.05rem; `;
 
-const SummaryCard = styled.div` display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; padding: 16px; background: #f8fafc; border-radius: 12px;`;
-const SummaryItem = styled.div` text-align: center; padding: 12px; border-bottom: 1px solid blue;`;
-const SummaryLabel = styled.div` font-size: 0.85rem; color: #002f72ff; margin-bottom: 6px; `;
-const SummaryValue = styled.div` font-weight: 700; color: #1e293b; font-size: 1.4rem; `;
+const SummaryCard = styled.div` display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; padding: 16px; background: #f8fafc; border-radius: 14px; border: 1px solid #f1f5f9; `;
+const SummaryItem = styled.div` text-align: center; padding: 12px 6px; border-bottom: 3px solid #6366f1; border-radius: 4px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.02); `;
+const SummaryLabel = styled.div` font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; `;
+const SummaryValue = styled.div` font-weight: 800; color: #0f172a; font-size: 1.5rem; `;
 
 const ActionsRow = styled.div` display: flex; justify-content: flex-end; margin-top: auto; `;
-const TableContainer = styled.div` width: 100%; overflow: auto; `;
+const TableContainer = styled.div` width: 100%; overflow: auto; border-radius: 12px; border: 1px solid #e2e8f0; `;
 
 const Table = styled.table`
   width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.9rem;
-  thead th { position: sticky; top: 0; background: #05315eff; text-align: center; padding: 12px 14px; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #fff; white-space: nowrap; border-radius: 1px; }
-  tbody td, tfoot td { padding: 10px 14px;color:#000000ff;  border: 1px solid #000000; }
-  tbody tr { transition: background 0.2s ease; &:hover { background: #ffffff; } }
+  thead th { position: sticky; top: 0; background: #0f172a; text-align: center; padding: 14px 16px; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #ffffff; white-space: nowrap; }
+  tbody td, tfoot td { padding: 12px 16px; color: #334155; border: none; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; }
+  tbody td:last-child, tfoot td:last-child { border-right: none; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr { transition: background 0.2s ease; &:hover { background: #f8fafc; } }
   td.num { text-align: center; font-variant-numeric: tabular-nums; }
-  td.strong, th.strong { font-weight: 700; }
-  tfoot td { background: #ffffffff; font-weight: 700; color: #000000ff; }
+  td.strong, th.strong { font-weight: 700; color: #0f172a; }
+  tfoot td { background: #f8fafc; font-weight: 700; color: #0f172a; border-top: 2px solid #cbd5e1; }
 `;
 
 const DialogOverlay = styled.div`
@@ -2678,8 +2765,8 @@ const DialogContainer = styled.div`
 `;
 
 const DialogHeader = styled.div`
-  background: #11003aff;
-  padding: 20px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+  padding: 24px;
   color: white;
   display: flex;
   justify-content: space-between;
@@ -2817,14 +2904,14 @@ export default function IssueStitching() {
   const t = translations[language];
   const [attendanceCount, setAttendanceCount] = useState('');
   const [pendingData, setPendingData] = useState({ pendingLots: 0, pendingPcs: 0 });
-  
+
   const [showIssueDialog, setShowIssueDialog] = useState(false);
   const [issueDate, setIssueDate] = useState(() => todayLocalISO());
   const [supervisor, setSupervisor] = useState('');
   const [dialogError, setDialogError] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState('');
-  
+
   // State for supervisors from Google Sheet
   const [supervisorOptions, setSupervisorOptions] = useState([]);
   const [loadingSupervisors, setLoadingSupervisors] = useState(false);
@@ -2848,7 +2935,7 @@ export default function IssueStitching() {
   useEffect(() => {
     let isMounted = true;
     let intervalId;
-    
+
     const fetchSupervisors = async () => {
       if (!isMounted) return;
       setLoadingSupervisors(true);
@@ -2869,10 +2956,10 @@ export default function IssueStitching() {
         }
       }
     };
-    
+
     fetchSupervisors();
     intervalId = setInterval(fetchSupervisors, 5 * 60 * 1000);
-    
+
     return () => {
       isMounted = false;
       if (intervalId) clearInterval(intervalId);
@@ -2886,19 +2973,19 @@ export default function IssueStitching() {
     if (matrix && !alreadyIssued) {
       const generatePdfBackground = async () => {
         try {
-          await generateIssuePdfBlob(matrix, { 
-            issueDate: todayLocalISO(), 
-            supervisor: '' 
+          await generateIssuePdfBlob(matrix, {
+            issueDate: todayLocalISO(),
+            supervisor: ''
           });
         } catch (err) {
           console.warn('Background PDF generation failed:', err);
         }
       };
-      
+
       generatePdfBackground();
     }
   }, [matrix, alreadyIssued]);
-  
+
   // Fetch pending data when supervisor is selected
   useEffect(() => {
     const fetchPendingData = async () => {
@@ -2937,15 +3024,15 @@ export default function IssueStitching() {
     try {
       const issueCacheKey = generateIssueStatusCacheKey(lotInput);
       issueStatusCache.delete(issueCacheKey);
-      
+
       const cacheKey = generateLotMatrixCacheKey(lotInput);
       const cachedMatrix = lotMatrixCache.get(cacheKey);
-      
+
       if (cachedMatrix) {
         setMatrix(cachedMatrix);
         const isIssued = await isLotAlreadyIssued(cachedMatrix.lotNumber, ctrl.signal);
         setAlreadyIssued(isIssued);
-        
+
         if (isIssued) {
           const errorMsg = `❌ Lot ${cachedMatrix.lotNumber} is already issued. Cannot re-issue.`;
           console.log(errorMsg);
@@ -2956,7 +3043,7 @@ export default function IssueStitching() {
         setMatrix(data);
         const isIssued = await isLotAlreadyIssued(data.lotNumber, ctrl.signal);
         setAlreadyIssued(isIssued);
-        
+
         if (isIssued) {
           const errorMsg = `❌ Lot ${data.lotNumber} is already issued. Cannot re-issue.`;
           console.log(errorMsg);
@@ -2991,12 +3078,12 @@ export default function IssueStitching() {
       setError(errorMsg);
       return;
     }
-    
+
     if (!matrix) {
       setError("No lot data available. Please search for a lot first.");
       return;
     }
-    
+
     setDialogError('');
     setSupervisor('');
     setAttendanceCount('');
@@ -3011,22 +3098,22 @@ export default function IssueStitching() {
   };
 
   const handleConfirmIssue = async () => {
-    if (!norm(supervisor)) { 
-      setDialogError('Supervisor is required.'); 
-      return; 
+    if (!norm(supervisor)) {
+      setDialogError('Supervisor is required.');
+      return;
     }
     if (!attendanceCount || parseInt(attendanceCount) <= 0) {
       setDialogError('Please enter a valid attendance count (minimum 1).');
       return;
     }
-    
+
     setDialogError('');
     setConfirming(true);
     setSubmissionStatus('submitting');
 
     try {
       const totalQty = matrix?.totals?.grand || 0;
-      
+
       if (matrix?.source === 'old') {
         const payload = matrix._payloadForIssue || {
           meta: {
@@ -3050,13 +3137,13 @@ export default function IssueStitching() {
             return acc;
           }, {})
         };
-        
+
         payload.meta.supervisor = supervisor;
         payload.meta.issueDate = issueDate;
-        
+
         const formData = new URLSearchParams();
         formData.append('payload', JSON.stringify(payload));
-        
+
         await fetch(OLD_APPS_SCRIPT_URL, {
           method: 'POST',
           mode: 'no-cors',
@@ -3067,7 +3154,7 @@ export default function IssueStitching() {
         });
       } else {
         const url = new URL('https://script.google.com/macros/s/AKfycbz9ofgmid-74YQ61oRUN6d4crBlF5FfG5qjeXDg2bUoLoZ7eBWkRVx58t4UzfNODuuzfA/exec');
-        
+
         const params = {
           action: 'issue',
           lot: matrix.lotNumber,
@@ -3078,22 +3165,22 @@ export default function IssueStitching() {
           pendingLots: pendingData.pendingLots,
           pendingPcs: pendingData.pendingPcs
         };
-        
+
         Object.entries(params).forEach(([key, value]) => {
           url.searchParams.append(key, value);
         });
-        
+
         await fetch(url, {
           method: 'GET',
           mode: 'no-cors'
         });
       }
-          
+
       setSubmissionStatus('generating');
       try {
-        await generateIssuePdf(matrix, { 
-          issueDate, 
-          supervisor, 
+        await generateIssuePdf(matrix, {
+          issueDate,
+          supervisor,
           manpower: attendanceCount || '0',
           pendingLots: pendingData.pendingLots || 0,
           pendingPcs: pendingData.pendingPcs || 0,
@@ -3106,23 +3193,23 @@ export default function IssueStitching() {
 
       setSubmissionStatus('success');
       setAttendanceCount('');
-      
+
       const issueCacheKey = generateIssueStatusCacheKey(matrix.lotNumber);
       issueStatusCache.delete(issueCacheKey);
-      
+
       const matrixCacheKey = generateLotMatrixCacheKey(matrix.lotNumber);
       lotMatrixCache.delete(matrixCacheKey);
-      
+
       setTimeout(() => {
         setShowIssueDialog(false);
         setSubmissionStatus('');
         setConfirming(false);
         setAlreadyIssued(true);
         setError(`✅ Lot ${matrix.lotNumber} issued to ${supervisor}.`);
-        
+
         setTimeout(() => {
           if (lotInput) {
-            handleSearch({ preventDefault: () => {} });
+            handleSearch({ preventDefault: () => { } });
           }
         }, 1000);
       }, 1500);
@@ -3132,10 +3219,10 @@ export default function IssueStitching() {
       setSubmissionStatus('error');
       setDialogError('Data submitted and PDF generated. Please check your sheet.');
       setConfirming(false);
-      
+
       try {
-        await generateIssuePdf(matrix, { 
-          issueDate, 
+        await generateIssuePdf(matrix, {
+          issueDate,
           supervisor,
           manpower: attendanceCount || '0',
           pendingLots: 0,
@@ -3205,8 +3292,8 @@ export default function IssueStitching() {
                 <GhostBtn as={motion.button} type="button" onClick={handleClear} whileTap={{ scale: 0.98 }}>
                   <FiRefreshCw /> {t.reset}
                 </GhostBtn>
-                
-                <LanguageBtn 
+
+                <LanguageBtn
                   as={motion.button}
                   type="button"
                   onClick={toggleLanguage}
@@ -3214,7 +3301,7 @@ export default function IssueStitching() {
                   $isHindi={language === 'hi'}
                   title={language === 'en' ? 'Switch to Hindi' : 'Switch to English'}
                 >
-                  <FiGlobe /> 
+                  <FiGlobe />
                   {language === 'en' ? 'हिंदी' : 'English'}
                 </LanguageBtn>
               </BtnRow>
@@ -3230,96 +3317,106 @@ export default function IssueStitching() {
         )}
 
         {matrix ? (
-          <ContentGrid>
-            <InfoPanel>
-              <PanelHeader><FiInfo /><h3>{t.lotInfo}</h3></PanelHeader>
-              <InfoGrid>
-                <InfoItem>
-                  <InfoIcon><FiPackage /></InfoIcon>
-                  <div><InfoLabel>{t.lotNumber}</InfoLabel><InfoValue>{matrix.lotNumber || '—'}</InfoValue></div>
-                </InfoItem>
-                <InfoItem>
-                  <InfoIcon><FiTag /></InfoIcon>
-                  <div><InfoLabel>{t.style}</InfoLabel><InfoValue>{matrix.style || '—'}</InfoValue></div>
-                </InfoItem>
-                <InfoItem>
-                  <InfoIcon><FiGrid /></InfoIcon>
-                  <div><InfoLabel>{t.fabric}</InfoLabel><InfoValue>{matrix.fabric || '—'}</InfoValue></div>
-                </InfoItem>
-                <InfoItem>
-                  <InfoIcon><FiTag /></InfoIcon>
-                  <div><InfoLabel>{t.garmentType}</InfoLabel><InfoValue>{matrix.garmentType || '—'}</InfoValue></div>
-                </InfoItem>
-              </InfoGrid>
-              <SummaryCard>
-                <SummaryItem><SummaryLabel>{t.totalPieces}</SummaryLabel><SummaryValue>{matrix.totals.grand}</SummaryValue></SummaryItem>
-                <SummaryItem><SummaryLabel>{t.colors}</SummaryLabel><SummaryValue>{matrix.rows.length}</SummaryValue></SummaryItem>
-                <SummaryItem><SummaryLabel>{t.sizes}</SummaryLabel><SummaryValue>{matrix.sizes.length}</SummaryValue></SummaryItem>
-              </SummaryCard>
-              <ActionsRow>
-                <PrimaryBtn
-                  as={motion.button}
-                  type="button"
-                  onClick={openIssueDialog}
-                  whileTap={{ scale: alreadyIssued ? 1 : 0.98 }}
-                  whileHover={{ scale: alreadyIssued ? 1 : 1.02 }}
-                  disabled={alreadyIssued || !matrix}
-                  style={{ 
-                    opacity: (alreadyIssued || !matrix) ? 0.6 : 1,
-                    cursor: (alreadyIssued || !matrix) ? 'not-allowed' : 'pointer',
-                    background: alreadyIssued ? '#6b7280' : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
-                  }}
-                >
-                  <FiCheck /> 
-                  {alreadyIssued ? t.alreadyIssued : t.submitToStitching}
-                </PrimaryBtn>
-              </ActionsRow>
-            </InfoPanel>
+          <>
+            {matrix.remarks && (
+              <RemarksCard>
+                <div className="remarks-header">
+                  <FiInfo /> {t.remarks}
+                </div>
+                <div className="remarks-text">{matrix.remarks}</div>
+              </RemarksCard>
+            )}
+            <ContentGrid>
+              <InfoPanel>
+                <PanelHeader><FiInfo /><h3>{t.lotInfo}</h3></PanelHeader>
+                <InfoGrid>
+                  <InfoItem>
+                    <InfoIcon><FiPackage /></InfoIcon>
+                    <div><InfoLabel>{t.lotNumber}</InfoLabel><InfoValue>{matrix.lotNumber || '—'}</InfoValue></div>
+                  </InfoItem>
+                  <InfoItem>
+                    <InfoIcon><FiTag /></InfoIcon>
+                    <div><InfoLabel>{t.style}</InfoLabel><InfoValue>{matrix.style || '—'}</InfoValue></div>
+                  </InfoItem>
+                  <InfoItem>
+                    <InfoIcon><FiGrid /></InfoIcon>
+                    <div><InfoLabel>{t.fabric}</InfoLabel><InfoValue>{matrix.fabric || '—'}</InfoValue></div>
+                  </InfoItem>
+                  <InfoItem>
+                    <InfoIcon><FiTag /></InfoIcon>
+                    <div><InfoLabel>{t.garmentType}</InfoLabel><InfoValue>{matrix.garmentType || '—'}</InfoValue></div>
+                  </InfoItem>
+                </InfoGrid>
+                <SummaryCard>
+                  <SummaryItem><SummaryLabel>{t.totalPieces}</SummaryLabel><SummaryValue>{matrix.totals.grand}</SummaryValue></SummaryItem>
+                  <SummaryItem><SummaryLabel>{t.colors}</SummaryLabel><SummaryValue>{matrix.rows.length}</SummaryValue></SummaryItem>
+                  <SummaryItem><SummaryLabel>{t.sizes}</SummaryLabel><SummaryValue>{matrix.sizes.length}</SummaryValue></SummaryItem>
+                </SummaryCard>
+                <ActionsRow>
+                  <PrimaryBtn
+                    as={motion.button}
+                    type="button"
+                    onClick={openIssueDialog}
+                    whileTap={{ scale: alreadyIssued ? 1 : 0.98 }}
+                    whileHover={{ scale: alreadyIssued ? 1 : 1.02 }}
+                    disabled={alreadyIssued || !matrix}
+                    style={{
+                      opacity: (alreadyIssued || !matrix) ? 0.6 : 1,
+                      cursor: (alreadyIssued || !matrix) ? 'not-allowed' : 'pointer',
+                      background: alreadyIssued ? '#6b7280' : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
+                    }}
+                  >
+                    <FiCheck />
+                    {alreadyIssued ? t.alreadyIssued : t.submitToStitching}
+                  </PrimaryBtn>
+                </ActionsRow>
+              </InfoPanel>
 
-            <TablePanel>
-              <PanelHeader><FiGrid /><h3>{t.cuttingMatrix}</h3></PanelHeader>
-              <TableContainer>
-                <Table>
-                  <thead>
-                    <tr>
-                      <th>{t.color}</th>
-                      <th>{t.cuttingTable}</th>
-                      {displaySizes.map((s, i) => (
-                        <th key={`${s || 'size'}-${i}`}>{s || '\u00A0'}</th>
-                      ))}
-                      <th>{t.totalPcs}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {matrix.rows.map((r, idx) => (
-                      <tr key={idx}>
-                        <td>{r.color}</td>
-                        <td className="num">{r.cuttingTable ?? ''}</td>
+              <TablePanel>
+                <PanelHeader><FiGrid /><h3>{t.cuttingMatrix}</h3></PanelHeader>
+                <TableContainer>
+                  <Table>
+                    <thead>
+                      <tr>
+                        <th>{t.color}</th>
+                        <th>{t.cuttingTable}</th>
                         {displaySizes.map((s, i) => (
-                          <td key={`${r.color}-${s || 'size'}-${i}`} className="num">
-                            {r.sizes?.[s] ?? ''}
+                          <th key={`${s || 'size'}-${i}`}>{s || '\u00A0'}</th>
+                        ))}
+                        <th>{t.totalPcs}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matrix.rows.map((r, idx) => (
+                        <tr key={idx}>
+                          <td>{r.color}</td>
+                          <td className="num">{r.cuttingTable ?? ''}</td>
+                          {displaySizes.map((s, i) => (
+                            <td key={`${r.color}-${s || 'size'}-${i}`} className="num">
+                              {r.sizes?.[s] ?? ''}
+                            </td>
+                          ))}
+                          <td className="num strong">{r.totalPcs ?? ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td className="strong">{t.total}</td>
+                        <td className="num">—</td>
+                        {displaySizes.map((s, i) => (
+                          <td key={`total-${s || 'size'}-${i}`} className="num strong">
+                            {matrix.totals.perSize?.[s] ?? 0}
                           </td>
                         ))}
-                        <td className="num strong">{r.totalPcs ?? ''}</td>
+                        <td className="num strong">{matrix.totals.grand}</td>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td className="strong">{t.total}</td>
-                      <td className="num">—</td>
-                      {displaySizes.map((s, i) => (
-                        <td key={`total-${s || 'size'}-${i}`} className="num strong">
-                          {matrix.totals.perSize?.[s] ?? 0}
-                        </td>
-                      ))}
-                      <td className="num strong">{matrix.totals.grand}</td>
-                    </tr>
-                  </tfoot>
-                </Table>
-              </TableContainer>
-            </TablePanel>
-          </ContentGrid>
+                    </tfoot>
+                  </Table>
+                </TableContainer>
+              </TablePanel>
+            </ContentGrid>
+          </>
         ) : (
           !loading && !error && (
             <>
@@ -3445,9 +3542,9 @@ export default function IssueStitching() {
               <DialogContent>
                 <SimpleField>
                   <FieldLabel><FiCalendar /> {t.dateOfIssue}</FieldLabel>
-                  <input 
-                    type="date" 
-                    value={issueDate} 
+                  <input
+                    type="date"
+                    value={issueDate}
                     onChange={(e) => setIssueDate(e.target.value)}
                     disabled={confirming}
                   />
@@ -3505,22 +3602,22 @@ export default function IssueStitching() {
                         </option>
                       ))}
                     </select>
-                    
+
                     {loadingSupervisors && (
                       <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0' }}>
                         <Spinner size="14px" /> Loading supervisors from sheet...
                       </div>
                     )}
-                    
+
                     {!loadingSupervisors && supervisorOptions.length === 0 && (
                       <div style={{ fontSize: '0.85rem', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0' }}>
                         <FiAlertTriangle /> No stitching supervisors found. Please check sheet.
                       </div>
                     )}
-                    
+
                     {!loadingSupervisors && supervisorOptions.length > 0 && (
                       <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
-                        <FiCheck style={{ color: '#10b981' }} /> 
+                        <FiCheck style={{ color: '#10b981' }} />
                         {supervisorOptions.length} supervisor(s) loaded from sheet
                       </div>
                     )}
@@ -3585,17 +3682,17 @@ export default function IssueStitching() {
                 )}
 
                 <DialogActions>
-                  <SimpleGhostBtn 
-                    type="button" 
-                    onClick={closeIssueDialog} 
+                  <SimpleGhostBtn
+                    type="button"
+                    onClick={closeIssueDialog}
                     disabled={confirming}
                   >
                     {t.cancel}
                   </SimpleGhostBtn>
-                  <SimplePrimaryBtn 
-                    type="button" 
-                    onClick={handleConfirmIssue} 
-                    disabled={confirming} 
+                  <SimplePrimaryBtn
+                    type="button"
+                    onClick={handleConfirmIssue}
+                    disabled={confirming}
                   >
                     {confirming ? (
                       <>
